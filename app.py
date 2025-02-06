@@ -4,11 +4,21 @@ import shutil
 import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS  # Import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from scripts.data_processor import convert_files_to_json
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
+
 # Define the directory where repositories will be cloned
 app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
 
@@ -28,10 +38,15 @@ def stream_clone_output(process, repo_id):
     return process.poll()
 
 @app.route('/clone', methods=['POST'])
+@limiter.limit("10 per minute")
 def clone_repo():
     repo_url = request.json.get('repo_url')
     if not repo_url:
         return jsonify({'error': 'Repository URL is required'}), 400
+        
+    # Validate repository URL format
+    if not repo_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'Invalid repository URL format'}), 400
 
     try:
         # Extract username/repo from the URL
