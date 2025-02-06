@@ -12,9 +12,6 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Get port from environment variable or default to 8000
-port = int(os.environ.get('PORT', 8000))
-
 # Initialize rate limiter with Redis if available, otherwise fallback to in-memory
 if os.environ.get('REDIS_URL'):
     from flask_limiter.util import get_remote_address
@@ -202,4 +199,4 @@ def delete_repository(repo_id):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(debug=False)
