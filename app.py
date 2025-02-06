@@ -5,14 +5,16 @@ import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS  # Import CORS
 from scripts.data_processor import convert_files_to_json
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 # Define the directory where repositories will be cloned
 app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
 
-# Global variable to store clone progress
+# Global variables
 clone_progress = {}
+repo_metadata = {}
 
 def stream_clone_output(process, repo_id):
     """Stream clone progress and update global progress tracker."""
@@ -105,6 +107,70 @@ def convert_repo():
             'error': 'Failed to convert files',
             'details': str(e)
         }), 500
+
+@app.route('/repositories', methods=['GET'])
+def list_repositories():
+    """List all cloned repositories and their metadata."""
+    try:
+        repos = []
+        if os.path.exists(app.config['REPO_DIR']):
+            for repo_name in os.listdir(app.config['REPO_DIR']):
+                repo_path = os.path.join(app.config['REPO_DIR'], repo_name)
+                if os.path.isdir(repo_path):
+                    repo_info = repo_metadata.get(repo_name, {
+                        'name': repo_name,
+                        'cloned_at': datetime.fromtimestamp(os.path.getctime(repo_path)).isoformat(),
+                        'status': 'cloned'
+                    })
+                    repos.append(repo_info)
+        return jsonify({'repositories': repos}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/repository/<repo_id>', methods=['GET'])
+def get_repository(repo_id):
+    """Get detailed information about a specific repository."""
+    try:
+        repo_path = os.path.join(app.config['REPO_DIR'], repo_id.replace('_', '/'))
+        if not os.path.exists(repo_path):
+            return jsonify({'error': 'Repository not found'}), 404
+
+        # Get repository statistics
+        file_count = sum([len(files) for _, _, files in os.walk(repo_path)])
+        size = sum(os.path.getsize(os.path.join(dirpath, filename))
+                  for dirpath, _, filenames in os.walk(repo_path)
+                  for filename in filenames)
+
+        repo_info = {
+            'id': repo_id,
+            'path': repo_path,
+            'file_count': file_count,
+            'size_bytes': size,
+            'cloned_at': datetime.fromtimestamp(os.path.getctime(repo_path)).isoformat(),
+            'last_modified': datetime.fromtimestamp(os.path.getmtime(repo_path)).isoformat(),
+            'status': clone_progress.get(repo_id, 'completed')
+        }
+        return jsonify(repo_info), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/repository/<repo_id>', methods=['DELETE'])
+def delete_repository(repo_id):
+    """Delete a repository from the system."""
+    try:
+        repo_path = os.path.join(app.config['REPO_DIR'], repo_id.replace('_', '/'))
+        if not os.path.exists(repo_path):
+            return jsonify({'error': 'Repository not found'}), 404
+
+        shutil.rmtree(repo_path)
+        if repo_id in clone_progress:
+            del clone_progress[repo_id]
+        if repo_id in repo_metadata:
+            del repo_metadata[repo_id]
+
+        return jsonify({'message': f'Repository {repo_id} deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
