@@ -12,12 +12,26 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize rate limiter
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+# Get port from environment variable or default to 8000
+port = int(os.environ.get('PORT', 8000))
+
+# Initialize rate limiter with Redis if available, otherwise fallback to in-memory
+if os.environ.get('REDIS_URL'):
+    from flask_limiter.util import get_remote_address
+    from flask_limiter.storage import RedisStorage
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        storage_uri=os.environ.get('REDIS_URL'),
+        storage_options={"socket_connect_timeout": 30},
+        default_limits=["200 per day", "50 per hour"]
+    )
+else:
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"]
+    )
 
 # Define the directory where repositories will be cloned
 app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
@@ -188,4 +202,4 @@ def delete_repository(repo_id):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
