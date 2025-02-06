@@ -37,6 +37,14 @@ app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
 clone_progress = {}
 repo_metadata = {}
 
+@app.route('/')
+def health_check():
+    """Health check endpoint for Render."""
+    return jsonify({
+        'status': 'healthy',
+        'message': 'Repository Visualization API is running'
+    }), 200
+
 def stream_clone_output(process, repo_id):
     """Stream clone progress and update global progress tracker."""
     while True:
