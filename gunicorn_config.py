@@ -4,7 +4,7 @@ import os
 port = int(os.environ.get('PORT', 10000))
 
 # Bind to 0.0.0.0 to make the server publicly accessible
-bind = f"0.0.0.0:{port}"
+bind = "0.0.0.0:10000"
 
 # Worker configuration
 workers = 4
