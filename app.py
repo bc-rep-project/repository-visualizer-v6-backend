@@ -15,7 +15,7 @@ CORS(app)  # Enable CORS for all routes
 # Initialize rate limiter with Redis if available, otherwise fallback to in-memory
 if os.environ.get('REDIS_URL'):
     from flask_limiter.util import get_remote_address
-    from flask_limiter.storage import RedisStorage
+    from flask_limiter.util import RedisStorage
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
