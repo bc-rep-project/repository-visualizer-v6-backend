@@ -1,10 +1,10 @@
 import os
 
-# Get port from Render's environment variable
-port = int(os.environ.get('PORT', 10000))
+# Get port from environment variable
+port = int(os.environ.get('PORT', '10000'))
 
-# Bind to the port from environment variable
-bind = f"0.0.0.0:{port}"  # Use f-string to insert port variable
+# Bind to 0.0.0.0 to make the server publicly accessible
+bind = f"0.0.0.0:{port}"
 
 # Worker configuration
 workers = 4
