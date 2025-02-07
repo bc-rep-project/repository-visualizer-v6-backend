@@ -1,7 +1,7 @@
 import os
 
-# Get port from environment variable (Render provides this automatically)
-port = int(os.environ.get('PORT', '10000'))
+# Get port from environment variable (no fallback)
+port = int(os.environ['PORT'])  # Will fail explicitly if PORT not set
 
 # Bind configuration
 bind = f"0.0.0.0:{port}"
