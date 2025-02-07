@@ -1,7 +1,7 @@
 import os
 
-# Get port from environment variable
-port = int(os.environ.get('PORT', '10000'))
+# Get port from environment variable (Render provides this)
+port = int(os.environ.get('PORT', 10000))
 
 # Bind to 0.0.0.0 to make the server publicly accessible
 bind = f"0.0.0.0:{port}"
