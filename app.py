@@ -12,22 +12,14 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize rate limiter with Redis if available, otherwise fallback to in-memory
-if os.environ.get('REDIS_URL'):
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        storage_uri=os.environ.get('REDIS_URL'),  # Redis URL will be used directly
-        storage_options={"socket_connect_timeout": 30},
-        default_limits=["200 per day", "50 per hour"]
-    )
-else:
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        storage_uri="memory://",  # Use in-memory storage as fallback
-        default_limits=["200 per day", "50 per hour"]
-    )
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+    storage_options={"socket_connect_timeout": 30} if os.environ.get('REDIS_URL') else {},
+    default_limits=["200 per day", "50 per hour"]
+)
 
 # Define the directory where repositories will be cloned
 app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
