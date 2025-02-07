@@ -1,11 +1,5 @@
 import os
 
-# Get port from environment variable (no fallback)
-port = int(os.environ['PORT'])  # Will fail explicitly if PORT not set
-
-# Bind configuration
-bind = f"0.0.0.0:{port}"
-
 # Worker configuration
 workers = 4
 worker_class = 'sync'
