@@ -14,12 +14,10 @@ CORS(app)  # Enable CORS for all routes
 
 # Initialize rate limiter with Redis if available, otherwise fallback to in-memory
 if os.environ.get('REDIS_URL'):
-    from flask_limiter.util import get_remote_address
-    from flask_limiter.storage import RedisStorage
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        storage_uri=os.environ.get('REDIS_URL'),
+        storage_uri=os.environ.get('REDIS_URL'),  # Redis URL will be used directly
         storage_options={"socket_connect_timeout": 30},
         default_limits=["200 per day", "50 per hour"]
     )
@@ -27,6 +25,7 @@ else:
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
+        storage_uri="memory://",  # Use in-memory storage as fallback
         default_limits=["200 per day", "50 per hour"]
     )
 
