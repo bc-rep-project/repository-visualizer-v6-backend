@@ -1,7 +1,7 @@
 import os
 
 # Get port from environment variable or default to 8000
-port = os.environ.get('PORT', '8000')
+port = int(os.environ.get('PORT', '8000'))
 
 # Bind to 0.0.0.0 to make the server publicly accessible
 bind = f"0.0.0.0:{port}"
