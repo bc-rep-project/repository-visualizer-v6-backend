@@ -24,4 +24,11 @@ keyfile = None
 certfile = None
 
 # Update bind address to use PORT environment variable with 8000 as fallback
-bind = "0.0.0.0:" + os.environ.get("PORT", "8000") 
+# bind = "0.0.0.0:" + os.environ.get("PORT", "8000")
+
+# SSL
+keyfile = None
+certfile = None
+
+# Update bind address to use PORT environment variable with 8000 as fallback
+# bind = "0.0.0.0:" + os.environ.get("PORT", "8000") 
