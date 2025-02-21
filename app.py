@@ -28,28 +28,50 @@ app.config['REPO_DIR'] = os.path.join(os.getcwd(), 'repos')
 clone_progress = {}
 repo_metadata = {}
 
+def check_git_available():
+    """Check if git is available in the system."""
+    try:
+        subprocess.run(['git', '--version'], capture_output=True, check=True)
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+
 @app.route('/')
 def health_check():
     """Health check endpoint for Render."""
+    git_available = check_git_available()
     return jsonify({
         'status': 'healthy',
-        'message': 'Repository Visualization API is running'
+        'message': 'Repository Visualization API is running',
+        'git_available': git_available
     }), 200
 
 def stream_clone_output(process, repo_id):
     """Stream clone progress and update global progress tracker."""
-    while True:
-        output = process.stdout.readline()
-        if output == '' and process.poll() is not None:
-            break
-        if output:
-            progress_msg = output.strip().decode('utf-8')
-            clone_progress[repo_id] = progress_msg
-    return process.poll()
+    try:
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                progress_msg = output.strip().decode('utf-8')
+                clone_progress[repo_id] = progress_msg
+        return process.poll()
+    except Exception as e:
+        clone_progress[repo_id] = f'Error streaming output: {str(e)}'
+        return 1
 
 @app.route('/clone', methods=['POST'])
 @limiter.limit("10 per minute")
 def clone_repo():
+    # Check if git is available
+    if not check_git_available():
+        return jsonify({'error': 'Git is not available on the server'}), 500
+
+    # Validate request
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+
     repo_url = request.json.get('repo_url')
     if not repo_url:
         return jsonify({'error': 'Repository URL is required'}), 400
@@ -60,6 +82,9 @@ def clone_repo():
 
     try:
         # Extract username/repo from the URL
+        if 'github.com/' not in repo_url:
+            return jsonify({'error': 'Only GitHub repositories are supported'}), 400
+            
         repo_name = repo_url.split('github.com/')[1].replace('.git', '')
         repo_path = os.path.join(app.config['REPO_DIR'], repo_name)
         repo_id = repo_name.replace('/', '_')
@@ -68,25 +93,39 @@ def clone_repo():
         clone_progress[repo_id] = 'Starting clone operation...'
         
         # Create the repos directory if it doesn't exist
-        os.makedirs(app.config['REPO_DIR'], exist_ok=True)
+        try:
+            os.makedirs(app.config['REPO_DIR'], exist_ok=True)
+        except Exception as e:
+            return jsonify({'error': f'Failed to create repository directory: {str(e)}'}), 500
         
         # If repo exists, remove it for fresh clone
         if os.path.exists(repo_path):
-            shutil.rmtree(repo_path)
+            try:
+                shutil.rmtree(repo_path)
+            except Exception as e:
+                return jsonify({'error': f'Failed to clean existing repository: {str(e)}'}), 500
         
         # Clone the repository with progress tracking
-        process = subprocess.Popen(
-            ['git', 'clone', '--progress', repo_url, repo_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True
-        )
+        try:
+            process = subprocess.Popen(
+                ['git', 'clone', '--progress', repo_url, repo_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to start git clone: {str(e)}'}), 500
         
         # Stream and track progress
         return_code = stream_clone_output(process, repo_id)
         
         if return_code != 0:
-            raise Exception('Clone operation failed')
+            error_msg = clone_progress.get(repo_id, 'Unknown error during clone')
+            return jsonify({'error': f'Clone operation failed: {error_msg}'}), 500
+        
+        # Verify the repository was cloned successfully
+        if not os.path.exists(os.path.join(repo_path, '.git')):
+            return jsonify({'error': 'Repository appears to be empty or invalid'}), 500
         
         clone_progress[repo_id] = 'Clone completed successfully'
         return jsonify({
@@ -97,9 +136,12 @@ def clone_repo():
         
     except Exception as e:
         error_msg = str(e)
-        if repo_id in clone_progress:
+        if 'repo_id' in locals():
             clone_progress[repo_id] = f'Error: {error_msg}'
-        return jsonify({'error': error_msg}), 500
+        return jsonify({
+            'error': error_msg,
+            'details': 'An unexpected error occurred during the clone operation'
+        }), 500
 
 @app.route('/progress/<repo_id>', methods=['GET'])
 def get_progress(repo_id):
