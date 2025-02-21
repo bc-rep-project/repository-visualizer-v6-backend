@@ -50,15 +50,29 @@ def stream_clone_output(process, repo_id):
     """Stream clone progress and update global progress tracker."""
     try:
         while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
+            # Read from stderr instead of stdout since git sends progress to stderr
+            output = process.stderr.readline()
+            if not output and process.poll() is not None:
                 break
             if output:
-                progress_msg = output.strip().decode('utf-8')
-                clone_progress[repo_id] = progress_msg
-        return process.poll()
+                try:
+                    # Handle both string and bytes output
+                    if isinstance(output, bytes):
+                        progress_msg = output.decode('utf-8').strip()
+                    else:
+                        progress_msg = output.strip()
+                    clone_progress[repo_id] = progress_msg
+                except Exception as e:
+                    clone_progress[repo_id] = f"Processing output: {str(output)}"
+        
+        return_code = process.poll()
+        if return_code == 0:
+            clone_progress[repo_id] = "Clone completed successfully"
+        else:
+            clone_progress[repo_id] = f"Process exited with code {return_code}"
+        return return_code
     except Exception as e:
-        clone_progress[repo_id] = f'Error streaming output: {str(e)}'
+        clone_progress[repo_id] = f"Error in stream handling: {str(e)}"
         return 1
 
 @app.route('/clone', methods=['POST'])
@@ -110,8 +124,8 @@ def clone_repo():
             process = subprocess.Popen(
                 ['git', 'clone', '--progress', repo_url, repo_path],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True
+                stderr=subprocess.PIPE,  # Capture stderr for progress
+                universal_newlines=False  # Keep as bytes to handle properly
             )
         except Exception as e:
             return jsonify({'error': f'Failed to start git clone: {str(e)}'}), 500
@@ -127,7 +141,6 @@ def clone_repo():
         if not os.path.exists(os.path.join(repo_path, '.git')):
             return jsonify({'error': 'Repository appears to be empty or invalid'}), 500
         
-        clone_progress[repo_id] = 'Clone completed successfully'
         return jsonify({
             'message': 'Repository cloned successfully',
             'repo_path': repo_path,
