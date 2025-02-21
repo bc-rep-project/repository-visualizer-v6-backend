@@ -1,1 +1,1 @@
-gunicorn your_app:app -b 0.0.0.0:${PORT:-8000} --access-logfile - --error-logfile -
+web: gunicorn app:app -c gunicorn.conf.py
