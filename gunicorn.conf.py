@@ -2,6 +2,9 @@
 import multiprocessing
 import os
 
+# Default bind address (can be overridden by --bind command line option)
+bind = "0.0.0.0:8000"
+
 # Worker processes - limit to a reasonable number
 workers = min(multiprocessing.cpu_count(), 4)  # Max 4 workers
 worker_class = 'sync'
