@@ -1,5 +1,9 @@
 # Gunicorn configuration file
 import multiprocessing
+import os
+
+# Server socket - use Render's PORT
+bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
 
 # Worker processes
 workers = 4  # Fixed number of workers
