@@ -16,4 +16,4 @@ loglevel = 'info'
 
 # Application configuration
 wsgi_app = 'app:app'
-chdir = '/opt/render/project/src/backend' 
+chdir = '/' 
