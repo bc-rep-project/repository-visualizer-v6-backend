@@ -1,44 +1,24 @@
 # Gunicorn configuration file
 import multiprocessing
-import os
 
-# Default bind address (can be overridden by --bind command line option)
-bind = "0.0.0.0:8000"
-
-# Worker processes - limit to a reasonable number
-workers = min(multiprocessing.cpu_count(), 4)  # Max 4 workers
+# Worker processes
+workers = 4  # Fixed number of workers
 worker_class = 'sync'
-worker_connections = 1000
 timeout = 120
 keepalive = 5
 
 # Logging
 accesslog = '-'
 errorlog = '-'
-loglevel = 'debug'  # Temporarily increase log level for debugging
+loglevel = 'info'
 
 # Process naming
 proc_name = 'repository-visualizer'
 
-# SSL config
-keyfile = None
-certfile = None
-
 # Server mechanics
 daemon = False
-pidfile = None
-umask = 0
-user = None
-group = None
-tmp_upload_dir = None
-
-# Avoid thundering herd
 preload_app = True
 
 # Error handling
 capture_output = True
-enable_stdio_inheritance = True
-
-# Max requests per worker before reload
-max_requests = 1000
-max_requests_jitter = 50 
+enable_stdio_inheritance = True 
