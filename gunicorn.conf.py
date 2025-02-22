@@ -2,8 +2,9 @@
 import multiprocessing
 import os
 
-# Server socket
-bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
+# Server socket - ensure we use the PORT env var
+port = int(os.environ.get('PORT', '8000'))
+bind = f"0.0.0.0:{port}"
 
 # Worker processes - limit to a reasonable number
 workers = min(multiprocessing.cpu_count(), 4)  # Max 4 workers
@@ -15,7 +16,7 @@ keepalive = 5
 # Logging
 accesslog = '-'
 errorlog = '-'
-loglevel = 'info'
+loglevel = 'debug'  # Temporarily increase log level for debugging
 
 # Process naming
 proc_name = 'repository-visualizer'
