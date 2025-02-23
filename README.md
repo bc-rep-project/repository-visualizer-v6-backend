@@ -137,13 +137,61 @@ python -m pytest
 ## Deployment (Render)
 
 1. Connect your GitHub repository to Render
-2. Configure environment variables:
-   - `FLASK_ENV=production`
-   - `SECRET_KEY`
-   - `DATABASE_URL`
-   - `REDIS_URL` (optional)
-3. Set build command: `pip install -r requirements.txt`
-4. Set start command: `gunicorn wsgi:app`
+
+2. Create a new Web Service with these settings:
+   - **Name**: repository-visualizer-backend
+   - **Environment**: Python 3
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `gunicorn wsgi:app`
+   - **Root Directory**: `./backend` (if using monorepo)
+
+3. Add Environment Variables:
+   ```
+   FLASK_ENV=production
+   SECRET_KEY=your-secure-secret-key
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/repo_visualizer
+   REDIS_URL=redis://redis:6379/0  # Optional
+   PYTHON_VERSION=3.11.0
+   ```
+
+4. Configure the Health Check:
+   - **Path**: `/`
+   - **Status**: 200
+   - **Frequency**: 60s
+
+5. Database Setup:
+   - Create a PostgreSQL database in Render
+   - Add the provided DATABASE_URL to environment variables
+   - Run migrations after first deploy:
+     ```bash
+     render run python -m flask db upgrade
+     ```
+
+### Troubleshooting Deployment
+
+1. Application Errors:
+   - Check Render logs for detailed error messages
+   - Verify environment variables are set correctly
+   - Ensure DATABASE_URL is properly configured
+   - Check if migrations are applied
+
+2. Build Errors:
+   - Verify Python version in `runtime.txt`
+   - Check requirements.txt for compatibility
+   - Ensure Procfile is in the correct location
+   - Verify gunicorn configuration
+
+3. Database Errors:
+   - Check DATABASE_URL format
+   - Verify database exists and is accessible
+   - Ensure migrations are up to date
+   - Check database connection limits
+
+4. Common Solutions:
+   - Clear build cache and redeploy
+   - Check application logs for errors
+   - Verify file structure matches deployment config
+   - Test locally with production settings
 
 ## Rate Limiting
 
