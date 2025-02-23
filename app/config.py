@@ -11,7 +11,9 @@ class Config:
     # CORS settings
     CORS_ORIGINS = [
         "https://repository-visualizer-v6-frontend.vercel.app",
-        "http://localhost:3000"  # For local development
+        "http://localhost:3000",  # For local development
+        "https://repository-visualizer-v6-frontend-git-main-bc-rep-project.vercel.app",  # For preview deployments
+        "https://repository-visualizer-v6-frontend-*.vercel.app"  # For branch deployments
     ]
     
     # Rate limiting

@@ -16,12 +16,14 @@ def create_app(config_name='default'):
     # Load config
     app.config.from_object(config[config_name])
     
-    # Initialize CORS
+    # Initialize CORS with more specific configuration
     CORS(app, resources={
-        r"/*": {
+        r"/api/*": {
             "origins": app.config['CORS_ORIGINS'],
-            "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"]
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True,
+            "max_age": 3600
         }
     })
     
