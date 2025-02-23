@@ -27,8 +27,11 @@ def create_app(config_name='default'):
         }
     })
     
-    # Initialize extensions
+    # Initialize MongoDB
+    app.config["MONGO_URI"] = app.config.get('MONGO_URI')
     mongo.init_app(app)
+    
+    # Initialize rate limiter
     limiter.init_app(app)
     
     # Register blueprints
