@@ -7,7 +7,6 @@ from flask_limiter.util import get_remote_address
 from .config import config
 
 # Initialize extensions
-mongo = PyMongo()
 limiter = Limiter(key_func=get_remote_address)
 
 def create_app(config_name='default'):
@@ -29,7 +28,7 @@ def create_app(config_name='default'):
     
     # Initialize MongoDB
     app.config["MONGO_URI"] = app.config.get('MONGO_URI')
-    mongo.init_app(app)
+    app.mongo = PyMongo(app)  # Create and attach mongo instance directly to app
     
     # Initialize rate limiter
     limiter.init_app(app)
