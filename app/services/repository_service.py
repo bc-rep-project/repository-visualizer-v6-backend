@@ -2,121 +2,129 @@ import os
 import shutil
 import subprocess
 from datetime import datetime
-from typing import Dict, Optional, Tuple
-from bson import ObjectId
+from typing import Dict, List, Optional, Tuple
 
-from .. import mongo
+from flask import current_app
 from ..models.repository import Repository
 
 class RepositoryService:
     @staticmethod
-    def check_git_available() -> bool:
-        """Check if git is available in the system."""
-        try:
-            subprocess.run(['git', '--version'], capture_output=True, check=True)
-            return True
-        except (subprocess.SubprocessError, FileNotFoundError):
-            return False
-    
+    def get_all_repositories() -> List[Repository]:
+        """Get all repositories from the database."""
+        return list(current_app.mongo.db.repositories.find())
+
     @staticmethod
-    def clone_repository(repo_url: str, repo_path: str, repo_id: str) -> Tuple[bool, str]:
-        """Clone a repository and track its progress."""
-        try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(repo_path), exist_ok=True)
-            
-            # Remove existing repo if it exists
-            if os.path.exists(repo_path):
-                shutil.rmtree(repo_path)
-            
-            # Clone the repository
-            process = subprocess.Popen(
-                ['git', 'clone', '--progress', repo_url, repo_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
-            
-            _, stderr = process.communicate()
-            
-            if process.returncode == 0:
-                return True, "Repository cloned successfully"
-            else:
-                return False, f"Clone failed: {stderr}"
-                
-        except Exception as e:
-            return False, str(e)
-    
-    @staticmethod
-    def get_repository_stats(repo_path: str) -> Dict[str, int]:
-        """Get repository statistics including file count and total size."""
-        try:
-            file_count = sum([len(files) for _, _, files in os.walk(repo_path)])
-            size = sum(os.path.getsize(os.path.join(dirpath, filename))
-                      for dirpath, _, filenames in os.walk(repo_path)
-                      for filename in filenames)
-            
-            return {
-                'file_count': file_count,
-                'size_bytes': size
-            }
-        except Exception:
-            return {'file_count': 0, 'size_bytes': 0}
-    
+    def get_repository(repo_id: str) -> Optional[Repository]:
+        """Get a repository by its ID."""
+        repo_data = current_app.mongo.db.repositories.find_one({'repo_id': repo_id})
+        return Repository(**repo_data) if repo_data else None
+
     @staticmethod
     def create_repository(repo_url: str, repo_path: str, repo_id: str) -> Repository:
         """Create a new repository record."""
         repo = Repository(
             repo_id=repo_id,
-            name=repo_url.split('/')[-1].replace('.git', ''),
-            url=repo_url,
-            path=repo_path,
-            status='pending'
+            repo_url=repo_url,
+            repo_path=repo_path,
+            status='pending',
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
-        data = repo.to_db_dict()
-        result = mongo.db.repositories.insert_one(data)
-        repo._id = result.inserted_id
+        current_app.mongo.db.repositories.insert_one(repo.to_dict())
         return repo
-    
+
     @staticmethod
-    def update_repository_status(repo: Repository, status: str, stats: Optional[Dict] = None) -> Repository:
+    def update_repository_status(repo: Repository, status: str, stats: Dict = None) -> Repository:
         """Update repository status and stats."""
-        repo.status = status
+        update_data = {
+            'status': status,
+            'updated_at': datetime.utcnow()
+        }
         if stats:
-            repo.file_count = stats.get('file_count', 0)
-            repo.size_bytes = stats.get('size_bytes', 0)
-        repo.last_modified = datetime.utcnow()
+            update_data.update(stats)
         
-        mongo.db.repositories.update_one(
-            {'_id': repo._id},
-            {'$set': {
-                'status': status,
-                'file_count': repo.file_count,
-                'size_bytes': repo.size_bytes,
-                'last_modified': repo.last_modified
-            }}
+        current_app.mongo.db.repositories.update_one(
+            {'repo_id': repo.repo_id},
+            {'$set': update_data}
         )
-        return repo
-    
-    @staticmethod
-    def get_repository(repo_id: str) -> Optional[Repository]:
-        """Get a repository by repo_id."""
-        doc = mongo.db.repositories.find_one({'repo_id': repo_id})
-        return Repository.from_db_doc(doc) if doc else None
-    
-    @staticmethod
-    def get_all_repositories() -> list[Repository]:
-        """Get all repositories."""
-        docs = mongo.db.repositories.find()
-        return [Repository.from_db_doc(doc) for doc in docs]
-    
+        
+        repo_data = current_app.mongo.db.repositories.find_one({'repo_id': repo.repo_id})
+        return Repository(**repo_data)
+
     @staticmethod
     def delete_repository(repo: Repository) -> bool:
         """Delete a repository and its files."""
         try:
-            if os.path.exists(repo.path):
-                shutil.rmtree(repo.path)
-            mongo.db.repositories.delete_one({'_id': repo._id})
+            # Delete local repository files
+            if os.path.exists(repo.repo_path):
+                shutil.rmtree(repo.repo_path)
+            
+            # Delete from database
+            current_app.mongo.db.repositories.delete_one({'repo_id': repo.repo_id})
             return True
-        except Exception:
-            return False 
+        except Exception as e:
+            current_app.logger.error(f"Error deleting repository: {str(e)}")
+            return False
+
+    @staticmethod
+    def check_git_available() -> bool:
+        """Check if git is available on the system."""
+        try:
+            subprocess.run(['git', '--version'], capture_output=True, check=True)
+            return True
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return False
+
+    @staticmethod
+    def clone_repository(repo_url: str, repo_path: str, repo_id: str) -> Tuple[bool, str]:
+        """Clone a repository to the local filesystem."""
+        try:
+            if os.path.exists(repo_path):
+                shutil.rmtree(repo_path)
+
+            os.makedirs(os.path.dirname(repo_path), exist_ok=True)
+            
+            result = subprocess.run(
+                ['git', 'clone', '--depth', '1', repo_url, repo_path],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return True, "Repository cloned successfully"
+        except subprocess.CalledProcessError as e:
+            error_message = e.stderr.strip()
+            return False, f"Git clone failed: {error_message}"
+        except Exception as e:
+            return False, f"Error cloning repository: {str(e)}"
+
+    @staticmethod
+    def get_repository_stats(repo_path: str) -> Dict:
+        """Get repository statistics."""
+        stats = {
+            'file_count': 0,
+            'directory_count': 0,
+            'total_size': 0,
+            'languages': {}
+        }
+
+        try:
+            for root, dirs, files in os.walk(repo_path):
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                
+                stats['directory_count'] += len(dirs)
+                stats['file_count'] += len(files)
+                
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    stats['total_size'] += os.path.getsize(file_path)
+                    
+                    # Count files by extension
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext:
+                        stats['languages'][ext] = stats['languages'].get(ext, 0) + 1
+
+        except Exception as e:
+            current_app.logger.error(f"Error getting repository stats: {str(e)}")
+        
+        return stats 

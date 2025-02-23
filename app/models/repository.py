@@ -1,19 +1,35 @@
 from datetime import datetime
+from typing import Dict, Optional
 from bson import ObjectId
 
 class Repository:
     collection_name = 'repositories'
 
-    def __init__(self, repo_id, name, url, path, status='pending'):
+    def __init__(
+        self,
+        repo_id: str,
+        repo_url: str,
+        repo_path: str,
+        status: str,
+        created_at: datetime,
+        updated_at: datetime,
+        file_count: int = 0,
+        directory_count: int = 0,
+        total_size: int = 0,
+        languages: Dict[str, int] = None,
+        _id: Optional[str] = None
+    ):
+        self._id = _id
         self.repo_id = repo_id
-        self.name = name
-        self.url = url
-        self.path = path
-        self.file_count = 0
-        self.size_bytes = 0
+        self.repo_url = repo_url
+        self.repo_path = repo_path
         self.status = status
-        self.cloned_at = datetime.utcnow()
-        self.last_modified = datetime.utcnow()
+        self.created_at = created_at if isinstance(created_at, datetime) else datetime.fromisoformat(created_at)
+        self.updated_at = updated_at if isinstance(updated_at, datetime) else datetime.fromisoformat(updated_at)
+        self.file_count = file_count
+        self.directory_count = directory_count
+        self.total_size = total_size
+        self.languages = languages or {}
 
     @staticmethod
     def from_db_doc(doc):
@@ -21,35 +37,37 @@ class Repository:
             return None
         repo = Repository(
             repo_id=doc['repo_id'],
-            name=doc['name'],
-            url=doc['url'],
-            path=doc['path'],
-            status=doc['status']
+            repo_url=doc['repo_url'],
+            repo_path=doc['repo_path'],
+            status=doc['status'],
+            created_at=doc['created_at'],
+            updated_at=doc['updated_at'],
+            file_count=doc.get('file_count', 0),
+            directory_count=doc.get('directory_count', 0),
+            total_size=doc.get('total_size', 0),
+            languages=doc.get('languages', {}),
+            _id=str(doc.get('_id'))
         )
-        repo.file_count = doc.get('file_count', 0)
-        repo.size_bytes = doc.get('size_bytes', 0)
-        repo.cloned_at = doc.get('cloned_at', datetime.utcnow())
-        repo.last_modified = doc.get('last_modified', datetime.utcnow())
         repo._id = doc.get('_id')
         return repo
 
-    def to_dict(self):
+    def to_dict(self) -> Dict:
+        """Convert repository to dictionary for JSON serialization."""
         return {
-            'id': str(getattr(self, '_id', None)),
+            '_id': str(self._id) if self._id else None,
             'repo_id': self.repo_id,
-            'name': self.name,
-            'url': self.url,
-            'path': self.path,
-            'file_count': self.file_count,
-            'size_bytes': self.size_bytes,
+            'repo_url': self.repo_url,
+            'repo_path': self.repo_path,
             'status': self.status,
-            'cloned_at': self.cloned_at.isoformat(),
-            'last_modified': self.last_modified.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'file_count': self.file_count,
+            'directory_count': self.directory_count,
+            'total_size': self.total_size,
+            'languages': self.languages
         }
 
     def to_db_dict(self):
         data = self.to_dict()
         data['_id'] = getattr(self, '_id', ObjectId())
-        data['cloned_at'] = self.cloned_at
-        data['last_modified'] = self.last_modified
         return data 

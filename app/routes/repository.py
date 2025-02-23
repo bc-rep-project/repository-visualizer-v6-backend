@@ -1,14 +1,13 @@
 from flask import Blueprint, jsonify, request
 from ..services.repository_service import RepositoryService
-from ..models.repository import Repository
-from .. import db, limiter
+from .. import limiter
 
 repo_bp = Blueprint('repository', __name__, url_prefix='/api/repositories')
 
 @repo_bp.route('/', methods=['GET'])
 def list_repositories():
     """List all repositories."""
-    repositories = Repository.query.all()
+    repositories = RepositoryService.get_all_repositories()
     return jsonify({
         'repositories': [repo.to_dict() for repo in repositories]
     }), 200
@@ -59,7 +58,7 @@ def clone_repository():
 @repo_bp.route('/<repo_id>', methods=['GET'])
 def get_repository(repo_id):
     """Get repository details."""
-    repo = Repository.query.filter_by(repo_id=repo_id).first()
+    repo = RepositoryService.get_repository(repo_id)
     if not repo:
         return jsonify({'error': 'Repository not found'}), 404
     return jsonify(repo.to_dict()), 200
@@ -67,7 +66,7 @@ def get_repository(repo_id):
 @repo_bp.route('/<repo_id>', methods=['DELETE'])
 def delete_repository(repo_id):
     """Delete a repository."""
-    repo = Repository.query.filter_by(repo_id=repo_id).first()
+    repo = RepositoryService.get_repository(repo_id)
     if not repo:
         return jsonify({'error': 'Repository not found'}), 404
 
