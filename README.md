@@ -5,7 +5,7 @@ A Flask-based RESTful API service for managing GitHub repository cloning and ana
 ## Tech Stack
 
 - **Framework**: Flask 3.0.2
-- **Database**: PostgreSQL
+- **Database**: MongoDB
 - **ORM**: SQLAlchemy
 - **Rate Limiting**: Flask-Limiter with Redis support
 - **CORS**: Flask-CORS
@@ -15,7 +15,7 @@ A Flask-based RESTful API service for managing GitHub repository cloning and ana
 ## Prerequisites
 
 - Python 3.8+
-- PostgreSQL 13+
+- MongoDB 6.0+
 - Git (for repository cloning)
 - Redis (optional, for rate limiting)
 
@@ -41,15 +41,17 @@ pip install -r requirements.txt
 ```env
 FLASK_ENV=development
 SECRET_KEY=your-secret-key-here
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/repo_visualizer
+DATABASE_URL=mongodb://localhost:27017/repo_visualizer
 REDIS_URL=redis://localhost:6379/0  # Optional, for rate limiting
 ```
 
-4. Initialize the database:
+4. Ensure MongoDB is running:
 ```bash
-flask db init
-flask db migrate -m "Initial migration"
-flask db upgrade
+# Check MongoDB status on Windows
+sc query MongoDB
+
+# Check MongoDB status on Unix/macOS
+sudo systemctl status mongodb
 ```
 
 5. Run the development server:
@@ -149,7 +151,7 @@ python -m pytest
    ```
    FLASK_ENV=production
    SECRET_KEY=your-secure-secret-key
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/repo_visualizer
+   DATABASE_URL=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/repo_visualizer?retryWrites=true&w=majority
    REDIS_URL=redis://redis:6379/0  # Optional
    PYTHON_VERSION=3.11.0
    ```
@@ -160,20 +162,32 @@ python -m pytest
    - **Frequency**: 60s
 
 5. Database Setup:
-   - Create a PostgreSQL database in Render
-   - Add the provided DATABASE_URL to environment variables
-   - Run migrations after first deploy:
-     ```bash
-     render run python -m flask db upgrade
-     ```
+   - Create a MongoDB Atlas cluster
+   - Create a database user with appropriate permissions
+   - Add the MongoDB connection string to environment variables
+   - Whitelist Render's IP addresses in MongoDB Atlas
+
+### MongoDB Atlas Setup
+
+1. Create a free cluster at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+2. Create a database user:
+   - Username and password
+   - Read/Write permissions to the database
+3. Get your connection string:
+   - Click "Connect"
+   - Choose "Connect your application"
+   - Copy the connection string
+4. Configure network access:
+   - Add Render's IP addresses to the IP whitelist
+   - Or allow access from anywhere (0.0.0.0/0)
 
 ### Troubleshooting Deployment
 
 1. Application Errors:
    - Check Render logs for detailed error messages
    - Verify environment variables are set correctly
-   - Ensure DATABASE_URL is properly configured
-   - Check if migrations are applied
+   - Ensure MongoDB connection string is properly formatted
+   - Check MongoDB Atlas access logs
 
 2. Build Errors:
    - Verify Python version in `runtime.txt`
@@ -182,15 +196,15 @@ python -m pytest
    - Verify gunicorn configuration
 
 3. Database Errors:
-   - Check DATABASE_URL format
-   - Verify database exists and is accessible
-   - Ensure migrations are up to date
-   - Check database connection limits
+   - Check MongoDB connection string format
+   - Verify database user permissions
+   - Check network access settings in MongoDB Atlas
+   - Ensure MongoDB cluster is running
 
 4. Common Solutions:
    - Clear build cache and redeploy
    - Check application logs for errors
-   - Verify file structure matches deployment config
+   - Verify MongoDB Atlas connection
    - Test locally with production settings
 
 ## Rate Limiting
@@ -233,7 +247,7 @@ The API uses consistent error responses:
 |--------------|----------------------------|----------|---------------------------------------------|
 | FLASK_ENV    | Environment name           | No       | development                                |
 | SECRET_KEY   | Flask secret key           | Yes      | -                                          |
-| DATABASE_URL | PostgreSQL connection URL  | Yes      | postgresql://postgres:postgres@localhost:5432/repo_visualizer |
+| DATABASE_URL | MongoDB connection URL      | Yes      | mongodb://localhost:27017/repo_visualizer      |
 | REDIS_URL    | Redis connection URL       | No       | memory://                                  |
 
 ## Troubleshooting
@@ -241,7 +255,7 @@ The API uses consistent error responses:
 ### Common Issues
 
 1. Database connection errors:
-   - Check PostgreSQL service is running
+   - Check MongoDB service is running
    - Verify DATABASE_URL in .env
    - Ensure database exists
 

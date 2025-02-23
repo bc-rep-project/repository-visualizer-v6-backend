@@ -3,8 +3,9 @@ import shutil
 import subprocess
 from datetime import datetime
 from typing import Dict, Optional, Tuple
+from bson import ObjectId
 
-from .. import db
+from .. import mongo
 from ..models.repository import Repository
 
 class RepositoryService:
@@ -72,8 +73,9 @@ class RepositoryService:
             path=repo_path,
             status='pending'
         )
-        db.session.add(repo)
-        db.session.commit()
+        data = repo.to_db_dict()
+        result = mongo.db.repositories.insert_one(data)
+        repo._id = result.inserted_id
         return repo
     
     @staticmethod
@@ -84,8 +86,29 @@ class RepositoryService:
             repo.file_count = stats.get('file_count', 0)
             repo.size_bytes = stats.get('size_bytes', 0)
         repo.last_modified = datetime.utcnow()
-        db.session.commit()
+        
+        mongo.db.repositories.update_one(
+            {'_id': repo._id},
+            {'$set': {
+                'status': status,
+                'file_count': repo.file_count,
+                'size_bytes': repo.size_bytes,
+                'last_modified': repo.last_modified
+            }}
+        )
         return repo
+    
+    @staticmethod
+    def get_repository(repo_id: str) -> Optional[Repository]:
+        """Get a repository by repo_id."""
+        doc = mongo.db.repositories.find_one({'repo_id': repo_id})
+        return Repository.from_db_doc(doc) if doc else None
+    
+    @staticmethod
+    def get_all_repositories() -> list[Repository]:
+        """Get all repositories."""
+        docs = mongo.db.repositories.find()
+        return [Repository.from_db_doc(doc) for doc in docs]
     
     @staticmethod
     def delete_repository(repo: Repository) -> bool:
@@ -93,9 +116,7 @@ class RepositoryService:
         try:
             if os.path.exists(repo.path):
                 shutil.rmtree(repo.path)
-            db.session.delete(repo)
-            db.session.commit()
+            mongo.db.repositories.delete_one({'_id': repo._id})
             return True
         except Exception:
-            db.session.rollback()
             return False 

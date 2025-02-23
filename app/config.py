@@ -19,20 +19,20 @@ class Config:
     RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL', 'memory://')
     RATELIMIT_STORAGE_OPTIONS = {"socket_connect_timeout": 30} if os.environ.get('REDIS_URL') else {}
     
-    # Database settings
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/repo_visualizer')
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # MongoDB settings
+    MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer')
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer_dev')
 
 class ProductionConfig(Config):
     DEBUG = False
-    # Add production-specific settings here
+    # Production settings here
 
 class TestingConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:postgres@localhost:5432/repo_visualizer_test'
+    MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer_test')
 
 config = {
     'development': DevelopmentConfig,

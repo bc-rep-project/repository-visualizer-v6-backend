@@ -1,15 +1,13 @@
 from flask import Flask
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from flask_pymongo import PyMongo
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from .config import config
 
 # Initialize extensions
-db = SQLAlchemy()
-migrate = Migrate()
+mongo = PyMongo()
 limiter = Limiter(key_func=get_remote_address)
 
 def create_app(config_name='default'):
@@ -28,8 +26,7 @@ def create_app(config_name='default'):
     })
     
     # Initialize extensions
-    db.init_app(app)
-    migrate.init_app(app, db)
+    mongo.init_app(app)
     limiter.init_app(app)
     
     # Register blueprints
