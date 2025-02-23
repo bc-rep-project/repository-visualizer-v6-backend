@@ -17,7 +17,7 @@ def create_app(config_name='default'):
     
     # Initialize CORS with more specific configuration
     CORS(app, resources={
-        r"/api/*": {
+        r"/*": {  # Apply to all routes
             "origins": app.config['CORS_ORIGINS'],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
