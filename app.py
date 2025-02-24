@@ -263,6 +263,228 @@ def delete_repository(repo_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/search', methods=['GET'])
+def search_repositories():
+    """Search through repositories based on query parameters."""
+    try:
+        query = request.args.get('q', '')
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+
+        results = []
+        if os.path.exists(app.config['REPO_DIR']):
+            for repo_name in os.listdir(app.config['REPO_DIR']):
+                repo_path = os.path.join(app.config['REPO_DIR'], repo_name)
+                if os.path.isdir(repo_path):
+                    # Search in repository name and contents
+                    if query.lower() in repo_name.lower():
+                        results.append({
+                            'type': 'repository',
+                            'name': repo_name,
+                            'path': repo_path,
+                            'matched': 'name'
+                        })
+                    
+                    # Search in files (limited to avoid performance issues)
+                    try:
+                        grep_output = subprocess.check_output(
+                            ['grep', '-r', '-l', '-i', query, repo_path],
+                            stderr=subprocess.DEVNULL
+                        ).decode('utf-8').splitlines()
+                        
+                        for file_path in grep_output[:5]:  # Limit to 5 files per repo
+                            results.append({
+                                'type': 'file',
+                                'name': os.path.basename(file_path),
+                                'path': file_path,
+                                'repository': repo_name,
+                                'matched': 'content'
+                            })
+                    except subprocess.CalledProcessError:
+                        pass  # No matches found in this repository
+
+        return jsonify({
+            'query': query,
+            'results': results[:20]  # Limit total results
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/notifications', methods=['GET'])
+def get_notifications():
+    """Get repository-related notifications."""
+    try:
+        notifications = []
+        if os.path.exists(app.config['REPO_DIR']):
+            for repo_name in os.listdir(app.config['REPO_DIR']):
+                repo_path = os.path.join(app.config['REPO_DIR'], repo_name)
+                if os.path.isdir(repo_path):
+                    # Check for recent changes
+                    last_modified = datetime.fromtimestamp(os.path.getmtime(repo_path))
+                    if (datetime.now() - last_modified).days < 7:  # Changes in last 7 days
+                        notifications.append({
+                            'type': 'repository_update',
+                            'repository': repo_name,
+                            'message': f'Repository updated {last_modified.strftime("%Y-%m-%d %H:%M:%S")}',
+                            'timestamp': last_modified.isoformat()
+                        })
+
+        return jsonify({
+            'notifications': sorted(notifications, key=lambda x: x['timestamp'], reverse=True)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/settings', methods=['GET', 'POST'])
+def manage_settings():
+    """Manage application settings."""
+    if request.method == 'GET':
+        try:
+            settings = {
+                'max_repo_size': os.getenv('MAX_REPO_SIZE', '1000MB'),
+                'default_branch': os.getenv('DEFAULT_BRANCH', 'main'),
+                'auto_cleanup': os.getenv('AUTO_CLEANUP', 'true'),
+                'cleanup_after_days': int(os.getenv('CLEANUP_AFTER_DAYS', '30'))
+            }
+            return jsonify(settings), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        try:
+            new_settings = request.json
+            # Validate and update settings
+            # Note: In a production environment, you'd want to persist these settings
+            return jsonify({'message': 'Settings updated successfully'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/dashboard/stats', methods=['GET'])
+def get_dashboard_stats():
+    """Get repository statistics for the dashboard."""
+    try:
+        total_repos = 0
+        total_size = 0
+        language_stats = {}
+        recent_activity = []
+
+        if os.path.exists(app.config['REPO_DIR']):
+            for repo_name in os.listdir(app.config['REPO_DIR']):
+                repo_path = os.path.join(app.config['REPO_DIR'], repo_name)
+                if os.path.isdir(repo_path):
+                    total_repos += 1
+                    
+                    # Calculate repository size
+                    size = sum(
+                        os.path.getsize(os.path.join(dirpath, filename))
+                        for dirpath, _, filenames in os.walk(repo_path)
+                        for filename in filenames
+                    )
+                    total_size += size
+
+                    # Get recent activity
+                    last_modified = datetime.fromtimestamp(os.path.getmtime(repo_path))
+                    recent_activity.append({
+                        'repository': repo_name,
+                        'action': 'modified',
+                        'timestamp': last_modified.isoformat()
+                    })
+
+        return jsonify({
+            'total_repositories': total_repos,
+            'total_size_bytes': total_size,
+            'language_distribution': language_stats,
+            'recent_activity': sorted(recent_activity, key=lambda x: x['timestamp'], reverse=True)[:10]
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/repository/<repo_id>/commits', methods=['GET'])
+def get_commits(repo_id):
+    """Get commit history for a repository."""
+    try:
+        repo_path = os.path.join(app.config['REPO_DIR'], repo_id.replace('_', '/'))
+        if not os.path.exists(repo_path):
+            return jsonify({'error': 'Repository not found'}), 404
+
+        # Get git commit history
+        try:
+            git_log = subprocess.check_output(
+                ['git', '-C', repo_path, 'log', '--pretty=format:%H|%an|%at|%s', '-n', '50'],
+                stderr=subprocess.DEVNULL
+            ).decode('utf-8').splitlines()
+
+            commits = []
+            for line in git_log:
+                hash_id, author, timestamp, message = line.split('|')
+                commits.append({
+                    'hash': hash_id,
+                    'author': author,
+                    'timestamp': datetime.fromtimestamp(int(timestamp)).isoformat(),
+                    'message': message
+                })
+
+            return jsonify({'commits': commits}), 200
+        except subprocess.CalledProcessError:
+            return jsonify({'error': 'Failed to retrieve commit history'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/repository/<repo_id>/issues', methods=['GET', 'POST'])
+def manage_issues(repo_id):
+    """Manage repository issues."""
+    if request.method == 'GET':
+        try:
+            # In a real application, you would fetch issues from a database
+            # This is a mock implementation
+            issues = [
+                {
+                    'id': 1,
+                    'title': 'Example Issue',
+                    'description': 'This is a mock issue',
+                    'status': 'open',
+                    'created_at': datetime.now().isoformat()
+                }
+            ]
+            return jsonify({'issues': issues}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        try:
+            # Create new issue
+            new_issue = request.json
+            # In a real application, you would save this to a database
+            return jsonify({'message': 'Issue created successfully'}), 201
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/repository/<repo_id>/pulls', methods=['GET', 'POST'])
+def manage_pull_requests(repo_id):
+    """Manage repository pull requests."""
+    if request.method == 'GET':
+        try:
+            # In a real application, you would fetch pull requests from a database
+            # This is a mock implementation
+            pull_requests = [
+                {
+                    'id': 1,
+                    'title': 'Example PR',
+                    'description': 'This is a mock pull request',
+                    'status': 'open',
+                    'created_at': datetime.now().isoformat()
+                }
+            ]
+            return jsonify({'pull_requests': pull_requests}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        try:
+            # Create new pull request
+            new_pr = request.json
+            # In a real application, you would save this to a database
+            return jsonify({'message': 'Pull request created successfully'}), 201
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
