@@ -27,10 +27,17 @@ class Config:
     
     # MongoDB settings
     MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer')
+    MONGO_TLS = True
+    MONGO_TLS_INSECURE = True  # Required for some MongoDB Atlas connections
+    MONGO_CONNECT_TIMEOUT_MS = 30000
+    MONGO_SOCKET_TIMEOUT_MS = 30000
+    MONGO_SERVER_SELECTION_TIMEOUT_MS = 30000
 
 class DevelopmentConfig(Config):
     DEBUG = True
     MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer_dev')
+    MONGO_TLS = False
+    MONGO_TLS_INSECURE = False
 
 class ProductionConfig(Config):
     DEBUG = False
@@ -44,6 +51,8 @@ class ProductionConfig(Config):
 class TestingConfig(Config):
     TESTING = True
     MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer_test')
+    MONGO_TLS = False
+    MONGO_TLS_INSECURE = False
 
 config = {
     'development': DevelopmentConfig,

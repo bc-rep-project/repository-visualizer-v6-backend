@@ -26,8 +26,13 @@ def create_app(config_name='default'):
         }
     })
     
-    # Initialize MongoDB
+    # Initialize MongoDB with SSL configuration
     app.config["MONGO_URI"] = app.config.get('MONGO_URI')
+    app.config["MONGO_TLS"] = app.config.get('MONGO_TLS', True)
+    app.config["MONGO_TLS_INSECURE"] = app.config.get('MONGO_TLS_INSECURE', True)
+    app.config["MONGO_CONNECT_TIMEOUT_MS"] = app.config.get('MONGO_CONNECT_TIMEOUT_MS', 30000)
+    app.config["MONGO_SOCKET_TIMEOUT_MS"] = app.config.get('MONGO_SOCKET_TIMEOUT_MS', 30000)
+    app.config["MONGO_SERVER_SELECTION_TIMEOUT_MS"] = app.config.get('MONGO_SERVER_SELECTION_TIMEOUT_MS', 30000)
     app.mongo = PyMongo(app)  # Create and attach mongo instance directly to app
     
     # Initialize rate limiter
