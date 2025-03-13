@@ -12,6 +12,160 @@ A Flask-based RESTful API service for managing GitHub repository cloning and ana
 - **WSGI Server**: Gunicorn
 - **Process Manager**: Gunicorn with workers
 
+## Repository Visualization Implementation Roadmap
+
+This roadmap outlines the steps to implement a comprehensive repository visualization tool similar to the one shown in the example images.
+
+### 1. Data Extraction
+
+#### 1.1 Repository Structure Analysis
+- [x] Extract file and directory structure
+- [x] Determine file types and languages
+- [x] Calculate file sizes and directory statistics
+
+#### 1.2 Code Analysis
+- [x] Extract functions and classes from files
+- [x] Identify dependencies between files (imports)
+- [x] Detect function calls between files
+- [ ] Analyze inheritance relationships for classes
+- [ ] Track variable usage across files
+
+#### 1.3 Language-Specific Parsers
+- [x] JavaScript/TypeScript parser
+- [x] Python parser
+- [x] Java parser
+- [ ] C/C++ parser
+- [ ] Ruby parser
+- [ ] Go parser
+
+### 2. Data Representation
+
+#### 2.1 Data Structure
+The extracted data is structured in a hierarchical JSON format:
+
+```json
+{
+  "tree": {
+    "name": "repository-name",
+    "path": "",
+    "type": "directory",
+    "children": [
+      {
+        "name": "src",
+        "path": "src",
+        "type": "directory",
+        "children": [...]
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "src/components/Button.js",
+        "name": "Button.js",
+        "type": "file",
+        "size": 1024,
+        "language": "JavaScript"
+      },
+      {
+        "id": "src/components/Button.js:Button",
+        "name": "Button",
+        "type": "function",
+        "size": 50
+      }
+    ],
+    "edges": [
+      {
+        "source": "src/components/App.js",
+        "target": "src/components/Button.js",
+        "type": "import"
+      },
+      {
+        "source": "src/components/App.js:App",
+        "target": "src/components/Button.js:Button",
+        "type": "calls"
+      }
+    ]
+  }
+}
+```
+
+#### 2.2 API Endpoints
+- [x] `GET /api/repositories/<repo_id>/analyze` - Get repository analysis data
+- [ ] `GET /api/repositories/<repo_id>/file/<file_path>` - Get file details with function information
+- [ ] `GET /api/repositories/<repo_id>/dependencies` - Get dependency graph data
+- [ ] `GET /api/repositories/<repo_id>/functions` - Get function call graph data
+
+### 3. Visualization Components
+
+#### 3.1 Force-Directed Graph
+- [x] Implement force-directed graph using D3.js
+- [x] Visualize files, directories, functions, and classes as nodes
+- [x] Show dependencies and function calls as edges
+- [x] Add interactive features (zoom, pan, selection)
+- [x] Implement highlighting of connected nodes
+- [ ] Add animation for traversing dependencies
+
+#### 3.2 Sunburst Diagram
+- [x] Implement sunburst visualization using D3.js
+- [x] Represent hierarchical structure of repository
+- [x] Add interactive zooming and selection
+- [x] Show file sizes proportionally
+- [ ] Add animation for transitions
+
+#### 3.3 Tree View
+- [x] Implement collapsible tree view
+- [ ] Add code preview on selection
+- [ ] Highlight dependencies in tree view
+
+#### 3.4 Additional Visualizations
+- [ ] Implement dependency chord diagram
+- [ ] Add heatmap for file changes/activity
+- [ ] Create function call stack visualization
+
+### 4. Interactive Features
+
+#### 4.1 Filtering and Search
+- [x] Filter by file type
+- [x] Filter by node type (file, directory, function, class)
+- [x] Search by name or path
+- [ ] Advanced filtering by dependency type
+
+#### 4.2 Selection and Highlighting
+- [x] Highlight selected node
+- [x] Highlight connected nodes and edges
+- [x] Show detailed information for selected node
+- [ ] Trace dependency paths
+
+#### 4.3 Animation
+- [x] Animate transitions between views
+- [x] Animate highlighting of connections
+- [ ] Animate dependency traversal
+
+### 5. Performance Optimization
+
+#### 5.1 Backend Optimization
+- [ ] Implement caching for analysis results
+- [ ] Optimize code parsing for large repositories
+- [ ] Add incremental analysis for repository updates
+
+#### 5.2 Frontend Optimization
+- [ ] Implement virtualization for large graphs
+- [ ] Add progressive loading for large repositories
+- [ ] Optimize D3.js rendering performance
+
+### 6. Deployment and Integration
+
+#### 6.1 Deployment
+- [x] Deploy backend to cloud platform (Render)
+- [x] Deploy frontend to Vercel
+- [ ] Set up CI/CD pipeline
+
+#### 6.2 Integration
+- [ ] Add GitHub OAuth integration
+- [ ] Implement webhook support for repository updates
+- [ ] Add support for GitLab and Bitbucket
+
 ## Prerequisites
 
 - Python 3.8+
@@ -96,6 +250,7 @@ backend/
 - `POST /api/repositories` - Clone a new repository
 - `GET /api/repositories/{repo_id}` - Get repository details
 - `DELETE /api/repositories/{repo_id}` - Delete a repository
+- `GET /api/repositories/{repo_id}/analyze` - Get repository analysis data
 
 For detailed API documentation, see [API_DOCUMENTATION.md](../API_DOCUMENTATION.md).
 

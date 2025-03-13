@@ -1,235 +1,24 @@
 import os
-import shutil
-import subprocess
-import json
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-import ast  # For Python code analysis
 import re
-from collections import defaultdict
+import ast
+from typing import Dict, List, Tuple, Optional
+from app.services.repository_service import RepositoryService
 
-from flask import current_app
-from app import mongo
-from bson import ObjectId
-import threading
-import sys
-
-class RepositoryService:
+class EnhancedRepositoryService:
     @staticmethod
-    def get_all_repositories(filters=None) -> List[Dict]:
-        """
-        Get all repositories from the database with optional filtering.
-        
-        Args:
-            filters: Dictionary of filter criteria
-        """
-        query = {}
-        
-        if filters:
-            # Status filter
-            if 'status' in filters and filters['status'] not in ['all', 'All Status']:
-                query['status'] = filters['status'].lower()
-            
-            # Language filter
-            if 'language' in filters and filters['language'] not in ['all', 'All Languages']:
-                query['languages.' + filters['language']] = {'$exists': True}
-            
-            # Size filter
-            if 'size_min' in filters and 'size_max' in filters:
-                try:
-                    size_min = float(filters['size_min']) * 1024 * 1024  # Convert MB to bytes
-                    size_max = float(filters['size_max']) * 1024 * 1024  # Convert MB to bytes
-                    query['total_size'] = {'$gte': size_min, '$lte': size_max}
-                except (ValueError, TypeError):
-                    pass
-            
-            # Search filter
-            if 'search' in filters and filters['search']:
-                search_term = filters['search']
-                query['$or'] = [
-                    {'repo_url': {'$regex': search_term, '$options': 'i'}},
-                    {'repo_name': {'$regex': search_term, '$options': 'i'}}
-                ]
-        
-        repositories = list(mongo.db.repositories.find(query))
-        
-        # Convert ObjectId to string
-        for repo in repositories:
-            repo['_id'] = str(repo['_id'])
-        
-        return repositories
-
-    @staticmethod
-    def get_repository(repo_id: str) -> Optional[Dict]:
-        """Get a repository by ID."""
-        if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
-            return None
-            
-        try:
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
-            if repo:
-                repo['_id'] = str(repo['_id'])
-            return repo
-        except Exception as e:
-            print(f"Error getting repository: {e}")
-            return None
-
-    @staticmethod
-    def add_repository(repo_url: str) -> Dict:
-        """Add a new repository to the database."""
-        # Extract repo name from URL
-        repo_name = repo_url.split('/')[-1]
-        
-        # Create a unique ID for the repository
-        repo_id = ObjectId()
-        
-        # Create repository document
-        repo = {
-            '_id': repo_id,
-            'repo_url': repo_url,
-            'repo_name': repo_name,
-            'repo_path': f"/tmp/repos/{repo_id}",
-            'status': 'pending',
-            'created_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
-            'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
-            'file_count': 0,
-            'directory_count': 0,
-            'total_size': 0,
-            'languages': {},
-            'size_limit_mb': 500
-        }
-        
-        # Insert into database
-        mongo.db.repositories.insert_one(repo)
-        
-        # Convert ObjectId to string for JSON response
-        repo['_id'] = str(repo['_id'])
-        
-        # Start background cloning process
-        threading.Thread(target=RepositoryService._clone_and_analyze_repository, args=(repo,)).start()
-        
-        return repo
-
-    @staticmethod
-    def _clone_and_analyze_repository(repo: Dict):
-        """Clone and analyze a repository in the background."""
-        repo_id = repo['_id'] if isinstance(repo['_id'], ObjectId) else ObjectId(repo['_id'])
-        repo_url = repo['repo_url']
-        repo_path = repo['repo_path']
-        
-        try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(repo_path), exist_ok=True)
-            
-            # Clone repository
-            subprocess.run(['git', 'clone', '--depth', '1', repo_url, repo_path], 
-                          check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            # Get repository stats
-            stats = RepositoryService._get_repository_stats(repo_path)
-            
-            # Update repository status and stats
-            mongo.db.repositories.update_one(
-                {'_id': repo_id},
-                {'$set': {
-                    'status': 'completed',
-                    'file_count': stats['file_count'],
-                    'directory_count': stats['directory_count'],
-                    'total_size': stats['total_size'],
-                    'languages': stats['languages'],
-                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
-                }}
-            )
-        except Exception as e:
-            # Update repository status to failed
-            mongo.db.repositories.update_one(
-                {'_id': repo_id},
-                {'$set': {
-                    'status': 'failed',
-                    'error': str(e),
-                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
-                }}
-            )
-
-    @staticmethod
-    def _get_repository_stats(repo_path: str) -> Dict:
-        """Get statistics for a repository."""
-        file_count = 0
-        directory_count = 0
-        total_size = 0
-        languages = defaultdict(int)
-        
-        for root, dirs, files in os.walk(repo_path):
-            # Skip .git directory
-            if '.git' in dirs:
-                dirs.remove('.git')
-                
-            directory_count += len(dirs)
-            
-            for file in files:
-                file_path = os.path.join(root, file)
-                file_size = os.path.getsize(file_path)
-                total_size += file_size
-                file_count += 1
-                
-                # Get file extension for language stats
-                _, ext = os.path.splitext(file)
-                if ext:
-                    languages[ext] = 1
-        
-        return {
-            'file_count': file_count,
-            'directory_count': directory_count,
-            'total_size': total_size,
-            'languages': dict(languages)
-        }
-
-    @staticmethod
-    def delete_repository(repo_id: str) -> bool:
-        """Delete a repository."""
-        if not repo_id or repo_id == 'null' or repo_id == 'undefined':
-                return False
-            
-        try:
-            # Get repository
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
-            if not repo:
-                return False
-            
-            # Delete repository directory
-            repo_path = repo.get('repo_path')
-            if repo_path and os.path.exists(repo_path):
-                shutil.rmtree(repo_path, ignore_errors=True)
-            
-            # Delete from database
-            mongo.db.repositories.delete_one({'_id': ObjectId(repo_id)})
-            
-            return True
-        except Exception as e:
-            print(f"Error deleting repository: {e}")
-            return False
-
-    @staticmethod
-    def analyze_repository_code(repo_id):
-        """Analyze repository code structure and dependencies."""
+    def analyze_repository_code(repo_id: str) -> Dict:
+        """Analyze repository code structure and dependencies with enhanced output."""
         repo = RepositoryService.get_repository(repo_id)
         if not repo:
             return {'error': 'Repository not found'}
         
-        # Check if repo is a dict (from error handling) or a Repository object
-        if isinstance(repo, dict):
-            if 'error' in repo:
-                return repo
-            repo_path = repo.get('repo_path')
-        else:
-            repo_path = repo.repo_path
-        
+        repo_path = repo.get('repo_path') if isinstance(repo, dict) else repo.repo_path
         if not repo_path or not os.path.exists(repo_path):
             return {'error': 'Repository directory not found'}
         
         # Build file tree
         file_tree = {
-            'name': os.path.basename(repo_path),
+            'name': 'root',
             'type': 'directory',
             'path': '/',
             'children': []
@@ -243,11 +32,7 @@ class RepositoryService:
             
             # Get relative path from repo root
             rel_path = os.path.relpath(root, repo_path)
-            if rel_path == '.':
-                current_dir = file_tree
-            else:
-                # Create or get the current directory node
-                current_dir = RepositoryService._get_or_create_dir_node(file_tree, rel_path)
+            current_dir = file_tree if rel_path == '.' else EnhancedRepositoryService._get_or_create_dir_node(file_tree, rel_path)
             
             # Process directories
             for dir_name in dirs:
@@ -280,14 +65,14 @@ class RepositoryService:
                 
                 # Extract functions and classes if it's a supported file type
                 if file_name.endswith(('.js', '.jsx', '.ts', '.tsx', '.py', '.java')):
-                    functions, classes = RepositoryService._extract_functions_and_classes(abs_file_path, file_node['path'])
+                    functions, classes = EnhancedRepositoryService._extract_functions_and_classes(abs_file_path, file_node['path'])
                     if functions:
                         file_node['functions'] = functions
                     if classes:
                         file_node['classes'] = classes
                 
                 # Extract imports
-                imports = RepositoryService._extract_imports(abs_file_path, file_node['path'], repo_path)
+                imports = EnhancedRepositoryService._extract_imports(abs_file_path, file_node['path'], repo_path)
                 if imports:
                     file_node['imports'] = imports
                 
@@ -296,7 +81,7 @@ class RepositoryService:
         return file_tree
 
     @staticmethod
-    def _get_or_create_dir_node(root, path):
+    def _get_or_create_dir_node(root: Dict, path: str) -> Dict:
         """Get or create a directory node in the tree."""
         if path == '.' or path == '':
             return root
@@ -325,7 +110,7 @@ class RepositoryService:
         return current
 
     @staticmethod
-    def _extract_functions_and_classes(file_path, file_rel_path):
+    def _extract_functions_and_classes(file_path: str, file_rel_path: str) -> Tuple[List[Dict], List[Dict]]:
         """Extract functions and classes from a file."""
         functions = []
         classes = []
@@ -347,8 +132,8 @@ class RepositoryService:
                     for match in re.finditer(pattern, content):
                         func_name = match.group(1)
                         # Find function dependencies
-                        func_content = RepositoryService._get_function_content(content, match.end())
-                        dependencies = RepositoryService._extract_function_dependencies(func_content, file_rel_path)
+                        func_content = EnhancedRepositoryService._get_function_content(content, match.end())
+                        dependencies = EnhancedRepositoryService._extract_function_dependencies(func_content, file_rel_path)
                         
                         functions.append({
                             'name': func_name,
@@ -360,7 +145,7 @@ class RepositoryService:
                 class_pattern = r'(?:export\s+)?class\s+(\w+)'
                 for match in re.finditer(class_pattern, content):
                     class_name = match.group(1)
-                    class_content = RepositoryService._get_class_content(content, match.end())
+                    class_content = EnhancedRepositoryService._get_class_content(content, match.end())
                     
                     # Extract methods
                     method_pattern = r'(?:async\s+)?(\w+)\s*\([^)]*\)\s*{'
@@ -369,8 +154,8 @@ class RepositoryService:
                     for method_match in re.finditer(method_pattern, class_content):
                         method_name = method_match.group(1)
                         if method_name not in ['constructor', 'get', 'set']:
-                            method_content = RepositoryService._get_function_content(class_content, method_match.end())
-                            dependencies = RepositoryService._extract_function_dependencies(method_content, file_rel_path)
+                            method_content = EnhancedRepositoryService._get_function_content(class_content, method_match.end())
+                            dependencies = EnhancedRepositoryService._extract_function_dependencies(method_content, file_rel_path)
                             
                             methods.append({
                                 'name': method_name,
@@ -441,7 +226,7 @@ class RepositoryService:
                 class_pattern = r'(?:public|private|protected)?\s*class\s+(\w+)'
                 for match in re.finditer(class_pattern, content):
                     class_name = match.group(1)
-                    class_content = RepositoryService._get_class_content(content, match.end())
+                    class_content = EnhancedRepositoryService._get_class_content(content, match.end())
                     
                     # Extract methods
                     method_pattern = r'(?:public|private|protected)?\s+(?:static\s+)?[\w<>[\]]+\s+(\w+)\s*\([^)]*\)\s*{'
@@ -449,8 +234,8 @@ class RepositoryService:
                     
                     for method_match in re.finditer(method_pattern, class_content):
                         method_name = method_match.group(1)
-                        method_content = RepositoryService._get_function_content(class_content, method_match.end())
-                        dependencies = RepositoryService._extract_function_dependencies(method_content, file_rel_path)
+                        method_content = EnhancedRepositoryService._get_function_content(class_content, method_match.end())
+                        dependencies = EnhancedRepositoryService._extract_function_dependencies(method_content, file_rel_path)
                         
                         methods.append({
                             'name': method_name,
@@ -470,7 +255,7 @@ class RepositoryService:
         return functions, classes
 
     @staticmethod
-    def _extract_imports(file_path, file_rel_path, repo_path):
+    def _extract_imports(file_path: str, file_rel_path: str, repo_path: str) -> List[Dict]:
         """Extract imports from a file."""
         imports = []
         
@@ -542,7 +327,7 @@ class RepositoryService:
         return imports
 
     @staticmethod
-    def _get_function_content(content, start_pos):
+    def _get_function_content(content: str, start_pos: int) -> str:
         """Get the content of a function."""
         brace_count = 0
         in_string = False
@@ -566,12 +351,12 @@ class RepositoryService:
         return content[start_pos:]
 
     @staticmethod
-    def _get_class_content(content, start_pos):
+    def _get_class_content(content: str, start_pos: int) -> str:
         """Get the content of a class."""
-        return RepositoryService._get_function_content(content, start_pos)
+        return EnhancedRepositoryService._get_function_content(content, start_pos)
 
     @staticmethod
-    def _extract_function_dependencies(content, file_path):
+    def _extract_function_dependencies(content: str, file_path: str) -> List[Dict]:
         """Extract function dependencies from function content."""
         dependencies = []
         
@@ -587,87 +372,4 @@ class RepositoryService:
                     'line': content[:match.start()].count('\n') + 1
                 })
         
-        return dependencies
-
-    @staticmethod
-    def get_repositories(page=1, limit=10, sort_by='created_at', sort_dir='desc'):
-        """Get all repositories with pagination."""
-        try:
-            # Calculate skip value for pagination
-            skip = (page - 1) * limit
-            
-            # Determine sort direction
-            sort_direction = -1 if sort_dir.lower() == 'desc' else 1
-            
-            # Get repositories from database
-            cursor = mongo.db.repositories.find().sort(sort_by, sort_direction).skip(skip).limit(limit)
-            repositories = list(cursor)
-            
-            # Get total count for pagination
-            total = mongo.db.repositories.count_documents({})
-            
-            return {
-                'repositories': repositories,
-                'pagination': {
-                    'page': page,
-                    'limit': limit,
-                    'total': total,
-                    'pages': (total + limit - 1) // limit  # Ceiling division
-                }
-            }
-        except Exception as e:
-            print(f"Error getting repositories: {e}")
-            return {'repositories': [], 'pagination': {'page': page, 'limit': limit, 'total': 0, 'pages': 0}} 
-
-    @staticmethod
-    def _register_exported_function(file_path, func_name):
-        """Register an exported function for cross-file call detection."""
-        if func_name not in RepositoryService._exported_functions:
-            RepositoryService._exported_functions[func_name] = []
-        RepositoryService._exported_functions[func_name].append(file_path)
-
-    @staticmethod
-    def _find_function_definition(func_name):
-        """Find the file that defines a function."""
-        if func_name in RepositoryService._exported_functions:
-            # Return the first file that defines this function
-            # In a more sophisticated implementation, we could use import analysis
-            # to determine which specific file is being referenced
-            return RepositoryService._exported_functions[func_name][0]
-        return None
-
-    @staticmethod
-    def _resolve_python_dependency(module, file_path, base_path):
-        """Resolve a Python import to a file path."""
-        # Convert dot notation to directory structure
-        module_path = module.replace('.', '/')
-        
-        # Check for .py file
-        py_path = f"{module_path}.py"
-        full_path = os.path.join(base_path, py_path)
-        if os.path.exists(full_path):
-            return py_path
-        
-        # Check for package (directory with __init__.py)
-        init_path = f"{module_path}/__init__.py"
-        full_init_path = os.path.join(base_path, init_path)
-        if os.path.exists(full_init_path):
-            return init_path
-        
-        return None
-
-    @staticmethod
-    def _resolve_java_dependency(module, file_path, base_path):
-        """Resolve a Java import to a file path."""
-        # Convert package notation to directory structure
-        module_path = module.replace('.', '/')
-        
-        # Check for .java file
-        java_path = f"{module_path}.java"
-        full_path = os.path.join(base_path, java_path)
-        if os.path.exists(full_path):
-            return java_path
-        
-        return None
-
-_exported_functions = {}  # Global registry of exported functions 
+        return dependencies 

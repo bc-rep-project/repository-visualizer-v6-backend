@@ -2,33 +2,24 @@ import os
 from datetime import timedelta
 
 class Config:
-    # Flask settings
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
+    """Base configuration."""
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-key-please-change')
+    MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer')
+    MONGO_TLS = os.environ.get('MONGO_TLS', 'false').lower() == 'true'
+    MONGO_TLS_INSECURE = os.environ.get('MONGO_TLS_INSECURE', 'false').lower() == 'true'
+    CORS_ORIGINS = eval(os.environ.get('CORS_ORIGINS', '["http://localhost:3000"]'))
+    REDIS_URL = os.environ.get('REDIS_URL', None)
+    RATELIMIT_STORAGE_OPTIONS = {}
+    REPO_STORAGE_DIR = os.environ.get('REPO_STORAGE_DIR', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'repos'))
     
     # Repository settings
     REPO_DIR = os.path.join(os.getcwd(), 'repos')
     
-    # CORS settings
-    CORS_ORIGINS = [
-        "https://repository-visualizer-v6-frontend.vercel.app",
-        "http://localhost:3000",  # For local development
-        "https://repository-visualizer-v6-frontend-git-main-bc-rep-project.vercel.app",  # For preview deployments
-        "https://repository-visualizer-v6-frontend-*.vercel.app"  # For branch deployments
-    ]
-    
     # Rate limiting
     RATELIMIT_DEFAULT = "200 per day"
-    RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL')
-    RATELIMIT_STORAGE_OPTIONS = {
-        "socket_connect_timeout": 30,
-        "socket_timeout": 30
-    } if os.environ.get('REDIS_URL') else {}
     RATELIMIT_STRATEGY = 'fixed-window'
     
     # MongoDB settings
-    MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer')
-    MONGO_TLS = True
-    MONGO_TLS_INSECURE = True  # Required for some MongoDB Atlas connections
     MONGO_CONNECT_TIMEOUT_MS = 30000
     MONGO_SOCKET_TIMEOUT_MS = 30000
     MONGO_SERVER_SELECTION_TIMEOUT_MS = 30000
