@@ -323,7 +323,7 @@ class RepositoryService:
                 current = new_dir
         
         return current
-
+    
     @staticmethod
     def _extract_functions_and_classes(file_path, file_rel_path):
         """Extract functions and classes from a file."""
@@ -535,7 +535,7 @@ class RepositoryService:
                         'type': 'package',
                         'symbols': [import_path.split('.')[-1]]
                     })
-        
+                
         except Exception as e:
             print(f"Error extracting imports from {file_path}: {e}")
         
