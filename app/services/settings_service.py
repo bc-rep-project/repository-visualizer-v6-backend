@@ -1,7 +1,14 @@
 from typing import Dict, Any, Optional
 from app import mongo
+from flask import current_app
 from bson import ObjectId
 import copy
+
+# Get MongoDB connection safely
+def get_mongo():
+    if hasattr(current_app, 'config') and 'get_mongo_connection' in current_app.config:
+        return current_app.config['get_mongo_connection']()
+    return mongo
 
 # Default settings to use when a user doesn't have settings yet
 DEFAULT_SETTINGS = {
@@ -38,7 +45,7 @@ class SettingsService:
         """
         try:
             # Try to find existing settings
-            settings = mongo.db.settings.find_one({"user_id": user_id})
+            settings = get_mongo().db.settings.find_one({"user_id": user_id})
             
             # If settings exist, return them (excluding MongoDB _id)
             if settings:
@@ -51,7 +58,7 @@ class SettingsService:
             default_settings["user_id"] = user_id
             
             # Store default settings in the database
-            mongo.db.settings.insert_one(default_settings)
+            get_mongo().db.settings.insert_one(default_settings)
             
             # Return default settings (without the _id field)
             default_settings.pop("_id", None)
@@ -83,7 +90,7 @@ class SettingsService:
             updated_settings = SettingsService._deep_merge(current_settings, settings_update)
             
             # Update in the database
-            mongo.db.settings.update_one(
+            get_mongo().db.settings.update_one(
                 {"user_id": user_id},
                 {"$set": updated_settings},
                 upsert=True
@@ -125,7 +132,7 @@ class SettingsService:
                 default_settings["user_id"] = user_id
                 
                 # Update in the database
-                mongo.db.settings.update_one(
+                get_mongo().db.settings.update_one(
                     {"user_id": user_id},
                     {"$set": default_settings},
                     upsert=True

@@ -48,6 +48,20 @@ def update_settings():
                 "error": "Invalid request. Request body is required."
             }), 400
         
+        # Validate the data structure
+        if not isinstance(data, dict):
+            return jsonify({
+                "error": "Invalid request. Settings must be a JSON object."
+            }), 400
+            
+        # Check for allowed top-level keys
+        allowed_keys = ['theme', 'visualization', 'notifications', 'system']
+        for key in data.keys():
+            if key not in allowed_keys:
+                return jsonify({
+                    "error": f"Invalid setting key: '{key}'. Allowed keys are: {', '.join(allowed_keys)}"
+                }), 400
+        
         # In a real application, you would get the user ID from the authenticated session
         user_id = "default"
         
@@ -55,10 +69,14 @@ def update_settings():
         updated_settings = SettingsService.update_settings(data, user_id)
         
         # Check if there was an error
-        if "error" in updated_settings:
+        if isinstance(updated_settings, dict) and "error" in updated_settings:
             return jsonify(updated_settings), 500
         
         return jsonify(updated_settings), 200
+    except ValueError as e:
+        return jsonify({
+            "error": f"Invalid JSON format: {str(e)}"
+        }), 400
     except Exception as e:
         return jsonify({
             "error": f"Failed to update settings: {str(e)}"

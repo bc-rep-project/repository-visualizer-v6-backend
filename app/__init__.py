@@ -27,7 +27,7 @@ def create_app(config_name='default'):
          resources={r"/*": {"origins": app.config['CORS_ORIGINS']}}, 
          supports_credentials=True,
          allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     
     # Initialize MongoDB
     global mongo
@@ -37,9 +37,19 @@ def create_app(config_name='default'):
         if app.config.get('MONGO_TLS_INSECURE'):
             mongo_options['tlsAllowInvalidCertificates'] = app.config['MONGO_TLS_INSECURE']
 
-    mongo = MongoClient(app.config['MONGO_URI'], **mongo_options)
-    db_name = app.config['MONGO_URI'].split('/')[-1]
-    mongo = mongo[db_name]
+    # Create a function to get MongoDB connection to avoid fork-safety issues
+    def get_mongo_connection():
+        client = MongoClient(app.config['MONGO_URI'], **mongo_options)
+        db_name = app.config['MONGO_URI'].split('/')[-1]
+        if '?' in db_name:
+            db_name = db_name.split('?')[0]
+        return client[db_name]
+    
+    # Initialize mongo to the connection function to be called after forking
+    app.config['get_mongo_connection'] = get_mongo_connection
+    
+    # Create initial connection for use before any forking
+    mongo = get_mongo_connection()
     
     # Initialize rate limiter
     global limiter
