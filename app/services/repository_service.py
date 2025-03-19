@@ -96,6 +96,7 @@ class RepositoryService:
             'repo_name': repo_name,
             'repo_path': f"/tmp/repos/{repo_id}",
             'status': 'pending',
+            'progress': 0,  # Add initial progress (0%)
             'created_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'file_count': 0,
@@ -127,18 +128,46 @@ class RepositoryService:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(repo_path), exist_ok=True)
             
+            # Update progress to 10% - starting work
+            get_mongo().db.repositories.update_one(
+                {'_id': repo_id},
+                {'$set': {
+                    'progress': 10,
+                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+                }}
+            )
+            
             # Clone repository
             subprocess.run(['git', 'clone', '--depth', '1', repo_url, repo_path], 
                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
+            # Update progress to 40% - repository cloned
+            get_mongo().db.repositories.update_one(
+                {'_id': repo_id},
+                {'$set': {
+                    'progress': 40,
+                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+                }}
+            )
+            
             # Get repository stats
             stats = RepositoryService._get_repository_stats(repo_path)
+            
+            # Update progress to 70% - stats collected
+            get_mongo().db.repositories.update_one(
+                {'_id': repo_id},
+                {'$set': {
+                    'progress': 70,
+                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+                }}
+            )
             
             # Update repository status and stats
             get_mongo().db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'completed',
+                    'progress': 100,  # Update to 100% when completed
                     'file_count': stats['file_count'],
                     'directory_count': stats['directory_count'],
                     'total_size': stats['total_size'],
@@ -152,6 +181,7 @@ class RepositoryService:
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'failed',
+                    'progress': 0,  # Reset progress when failed
                     'error': str(e),
                     'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
                 }}

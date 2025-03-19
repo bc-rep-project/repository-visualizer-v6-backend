@@ -24,6 +24,17 @@ def get_repositories():
             sort_dir=sort_dir
         )
         
+        # Check if there's a progress field in repository documents
+        # If not, add a default value based on status
+        for repo in repositories['repositories']:
+            if 'progress' not in repo:
+                if repo['status'] == 'completed':
+                    repo['progress'] = 100
+                elif repo['status'] == 'failed':
+                    repo['progress'] = 0
+                else:  # pending
+                    repo['progress'] = 30  # Arbitrary progress for pending repositories
+        
         return jsonify(repositories)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -56,6 +67,15 @@ def get_repository(repo_id):
     
     if not repository:
         return jsonify({'error': 'Repository not found'}), 404
+    
+    # Add progress field if it doesn't exist
+    if 'progress' not in repository:
+        if repository['status'] == 'completed':
+            repository['progress'] = 100
+        elif repository['status'] == 'failed':
+            repository['progress'] = 0
+        else:  # pending
+            repository['progress'] = 30  # Arbitrary progress for pending repositories
     
     return jsonify(repository), 200
 
