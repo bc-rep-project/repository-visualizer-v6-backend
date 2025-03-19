@@ -14,6 +14,12 @@ from bson import ObjectId
 import threading
 import sys
 
+# Get MongoDB connection safely
+def get_mongo():
+    if hasattr(current_app, 'config') and 'get_mongo_connection' in current_app.config:
+        return current_app.config['get_mongo_connection']()
+    return mongo
+
 class RepositoryService:
     @staticmethod
     def get_all_repositories(filters=None) -> List[Dict]:
@@ -51,7 +57,7 @@ class RepositoryService:
                     {'repo_name': {'$regex': search_term, '$options': 'i'}}
                 ]
         
-        repositories = list(mongo.db.repositories.find(query))
+        repositories = list(get_mongo().db.repositories.find(query))
         
         # Convert ObjectId to string
         for repo in repositories:
@@ -66,7 +72,7 @@ class RepositoryService:
             return None
             
         try:
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = get_mongo().db.repositories.find_one({'_id': ObjectId(repo_id)})
             if repo:
                 repo['_id'] = str(repo['_id'])
             return repo
@@ -100,7 +106,7 @@ class RepositoryService:
         }
         
         # Insert into database
-        mongo.db.repositories.insert_one(repo)
+        get_mongo().db.repositories.insert_one(repo)
         
         # Convert ObjectId to string for JSON response
         repo['_id'] = str(repo['_id'])
@@ -129,7 +135,7 @@ class RepositoryService:
             stats = RepositoryService._get_repository_stats(repo_path)
             
             # Update repository status and stats
-            mongo.db.repositories.update_one(
+            get_mongo().db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'completed',
@@ -142,7 +148,7 @@ class RepositoryService:
             )
         except Exception as e:
             # Update repository status to failed
-            mongo.db.repositories.update_one(
+            get_mongo().db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'failed',
@@ -192,7 +198,7 @@ class RepositoryService:
             
         try:
             # Get repository
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = get_mongo().db.repositories.find_one({'_id': ObjectId(repo_id)})
             if not repo:
                 return False
             
@@ -202,12 +208,86 @@ class RepositoryService:
                 shutil.rmtree(repo_path, ignore_errors=True)
             
             # Delete from database
-            mongo.db.repositories.delete_one({'_id': ObjectId(repo_id)})
+            get_mongo().db.repositories.delete_one({'_id': ObjectId(repo_id)})
             
             return True
         except Exception as e:
             print(f"Error deleting repository: {e}")
             return False
+
+    @staticmethod
+    def get_all_languages():
+        """
+        Get all languages used across repositories with their frequency.
+        
+        Returns:
+            Dictionary with language names as keys and frequency counts as values
+        """
+        try:
+            # Aggregate languages across all repositories
+            all_languages = {}
+            
+            # Get all repositories
+            repositories = get_mongo().db.repositories.find({}, {'languages': 1})
+            repositories_list = list(repositories)
+            
+            # Count languages
+            for repo in repositories_list:
+                if 'languages' in repo and isinstance(repo['languages'], dict):
+                    for lang, count in repo['languages'].items():
+                        # Clean the language name (remove dots from extensions)
+                        lang_name = lang.lstrip('.')
+                        if not lang_name:
+                            continue
+                            
+                        # Map common extensions to language names
+                        lang_mapping = {
+                            'py': 'Python',
+                            'js': 'JavaScript',
+                            'jsx': 'JavaScript (React)',
+                            'ts': 'TypeScript',
+                            'tsx': 'TypeScript (React)',
+                            'java': 'Java',
+                            'c': 'C',
+                            'cpp': 'C++',
+                            'cs': 'C#',
+                            'go': 'Go',
+                            'rb': 'Ruby',
+                            'php': 'PHP',
+                            'html': 'HTML',
+                            'css': 'CSS',
+                            'scss': 'SCSS',
+                            'json': 'JSON',
+                            'md': 'Markdown',
+                            'sql': 'SQL',
+                            'swift': 'Swift',
+                            'kt': 'Kotlin',
+                            'rs': 'Rust',
+                            'sh': 'Shell',
+                            'bat': 'Batch',
+                            'ps1': 'PowerShell'
+                        }
+                        
+                        # Use mapped name or original if not in mapping
+                        display_name = lang_mapping.get(lang_name, lang_name.upper())
+                        
+                        # Increment language count
+                        all_languages[display_name] = all_languages.get(display_name, 0) + 1
+            
+            # Sort by frequency (descending)
+            sorted_languages = {k: v for k, v in sorted(
+                all_languages.items(), 
+                key=lambda item: item[1], 
+                reverse=True
+            )}
+            
+            return sorted_languages
+            
+        except Exception as e:
+            import traceback
+            print(f"ERROR in get_all_languages: {e}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            return {}
 
     @staticmethod
     def analyze_repository_code(repo_id):
@@ -323,7 +403,7 @@ class RepositoryService:
                 current = new_dir
         
         return current
-
+    
     @staticmethod
     def _extract_functions_and_classes(file_path, file_rel_path):
         """Extract functions and classes from a file."""
@@ -535,7 +615,7 @@ class RepositoryService:
                         'type': 'package',
                         'symbols': [import_path.split('.')[-1]]
                     })
-        
+                
         except Exception as e:
             print(f"Error extracting imports from {file_path}: {e}")
         
@@ -600,11 +680,11 @@ class RepositoryService:
             sort_direction = -1 if sort_dir.lower() == 'desc' else 1
             
             # Get repositories from database
-            cursor = mongo.db.repositories.find().sort(sort_by, sort_direction).skip(skip).limit(limit)
+            cursor = get_mongo().db.repositories.find().sort(sort_by, sort_direction).skip(skip).limit(limit)
             repositories = list(cursor)
             
             # Get total count for pagination
-            total = mongo.db.repositories.count_documents({})
+            total = get_mongo().db.repositories.count_documents({})
             
             return {
                 'repositories': repositories,

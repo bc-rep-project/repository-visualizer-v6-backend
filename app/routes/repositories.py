@@ -105,8 +105,14 @@ def analyze_repository(repo_id):
 @limiter.limit("50/minute")
 def get_languages():
     """Get all languages used across repositories."""
-    languages = RepositoryService.get_all_languages()
-    return jsonify(languages), 200
+    try:
+        languages = RepositoryService.get_all_languages()
+        return jsonify(languages), 200
+    except Exception as e:
+        import traceback
+        print(f"Error fetching languages: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Failed to retrieve languages: {str(e)}'}), 500
 
 @repo_bp.route('/api/repositories/<repo_id>/analyze/debug', methods=['GET'])
 @limiter.limit("10/minute")

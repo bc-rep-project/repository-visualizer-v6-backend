@@ -65,6 +65,7 @@ def create_app(config_name='default'):
     from app.routes.search import search_bp
     from app.routes.settings import settings_bp
     from app.routes.notifications import notifications_bp
+    from app.routes.test import test_bp
     
     # Register blueprints
     app.register_blueprint(root_bp)
@@ -76,6 +77,7 @@ def create_app(config_name='default'):
     app.register_blueprint(search_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(test_bp)
     
     @app.errorhandler(500)
     def handle_500(error):
