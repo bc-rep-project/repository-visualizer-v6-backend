@@ -13,7 +13,8 @@ def get_mongo():
 # Default settings to use when a user doesn't have settings yet
 DEFAULT_SETTINGS = {
     "theme": {
-        "mode": "light"
+        "mode": "light",
+        "color": "default"
     },
     "visualization": {
         "defaultView": "forceGraph",
