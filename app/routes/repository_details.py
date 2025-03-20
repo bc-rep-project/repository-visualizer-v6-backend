@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.services.repository_service import RepositoryService
+from app.services.notification_service import NotificationService
 from app import limiter
 from datetime import datetime, timedelta
 import random
@@ -136,4 +137,174 @@ def get_repository_pulls(repo_id):
             'branch': f'feature/new-feature-{i}'
         })
     
-    return jsonify(pulls), 200 
+    return jsonify(pulls), 200
+
+@repo_details_bp.route('/<repo_id>/notifications', methods=['GET'])
+@limiter.limit("60/minute")
+def get_repository_notifications(repo_id):
+    """
+    Get notifications specific to a repository.
+    
+    Query parameters:
+    - status: Filter by read status ("all", "read", "unread")
+    - limit: Maximum number of notifications to return
+    - offset: Number of notifications to skip (for pagination)
+    """
+    try:
+        # Check if repository exists
+        repo = RepositoryService.get_repository(repo_id)
+        if not repo:
+            return jsonify({"error": "Repository not found"}), 404
+        
+        # Parse query parameters
+        status = request.args.get('status', 'all')
+        if status not in ['all', 'read', 'unread']:
+            status = 'all'
+        
+        limit = min(int(request.args.get('limit', 50)), 100)  # Cap at 100
+        offset = int(request.args.get('offset', 0))
+        
+        # Get repository notifications
+        result = NotificationService.get_repository_notifications(
+            repo_id=repo_id,
+            status=status,
+            limit=limit,
+            offset=offset
+        )
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to fetch repository notifications: {str(e)}",
+            "total": 0,
+            "unread": 0,
+            "notifications": []
+        }), 500
+
+@repo_details_bp.route('/<repo_id>/notifications', methods=['POST'])
+@limiter.limit("30/minute")
+def add_repository_notification(repo_id):
+    """
+    Add a notification for a specific repository.
+    
+    Request body:
+    {
+        "message": "Notification message",
+        "type": "error" | "warning" | "info" | "success",
+        "details": { ... } (optional)
+    }
+    """
+    try:
+        # Check if repository exists
+        repo = RepositoryService.get_repository(repo_id)
+        if not repo:
+            return jsonify({"error": "Repository not found"}), 404
+        
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "Invalid request. Request body is required."
+            }), 400
+        
+        # Validate required fields
+        if 'message' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Invalid request. 'message' field is required."
+            }), 400
+            
+        if 'type' not in data or data['type'] not in ['error', 'warning', 'info', 'success']:
+            return jsonify({
+                "success": False,
+                "error": "Invalid request. 'type' field must be one of: error, warning, info, success."
+            }), 400
+        
+        # Get repository name
+        repo_name = repo.get('repo_name', 'Unknown Repository')
+        
+        # Create notification
+        notification = NotificationService.add_repository_notification(
+            repo_id=repo_id,
+            repo_name=repo_name,
+            message=data['message'],
+            notification_type=data['type'],
+            details=data.get('details')
+        )
+        
+        return jsonify(notification), 201
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to add repository notification: {str(e)}"
+        }), 500
+
+@repo_details_bp.route('/<repo_id>/subscribe', methods=['POST'])
+@limiter.limit("30/minute")
+def subscribe_to_repository(repo_id):
+    """
+    Subscribe to notifications for a specific repository.
+    
+    Request body:
+    {
+        "subscriberId": "user-id" | "client-id"
+    }
+    """
+    try:
+        # Check if repository exists
+        repo = RepositoryService.get_repository(repo_id)
+        if not repo:
+            return jsonify({"error": "Repository not found"}), 404
+        
+        data = request.get_json()
+        
+        if not data or 'subscriberId' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Invalid request. 'subscriberId' field is required."
+            }), 400
+        
+        subscriber_id = data['subscriberId']
+        
+        # Subscribe to repository notifications
+        result = NotificationService.subscribe_to_repository(repo_id, subscriber_id)
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to subscribe to repository: {str(e)}"
+        }), 500
+
+@repo_details_bp.route('/<repo_id>/unsubscribe', methods=['POST'])
+@limiter.limit("30/minute")
+def unsubscribe_from_repository(repo_id):
+    """
+    Unsubscribe from notifications for a specific repository.
+    
+    Request body:
+    {
+        "subscriberId": "user-id" | "client-id"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'subscriberId' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Invalid request. 'subscriberId' field is required."
+            }), 400
+        
+        subscriber_id = data['subscriberId']
+        
+        # Unsubscribe from repository notifications
+        result = NotificationService.unsubscribe_from_repository(repo_id, subscriber_id)
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to unsubscribe from repository: {str(e)}"
+        }), 500 
