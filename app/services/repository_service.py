@@ -83,6 +83,9 @@ class RepositoryService:
         # Create a unique ID for the repository
         repo_id = ObjectId()
         
+        # Get current time in ISO format for consistent sorting
+        current_time = datetime.utcnow().isoformat() + 'Z'
+        
         # Create repository document
         repo = {
             '_id': repo_id,
@@ -90,8 +93,8 @@ class RepositoryService:
             'repo_name': repo_name,
             'repo_path': f"/tmp/repos/{repo_id}",
             'status': 'pending',
-            'created_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
-            'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
+            'created_at': current_time,
+            'updated_at': current_time,
             'file_count': 0,
             'directory_count': 0,
             'total_size': 0,
@@ -128,7 +131,8 @@ class RepositoryService:
             # Get repository stats
             stats = RepositoryService._get_repository_stats(repo_path)
             
-            # Update repository status and stats
+            # Update repository status and stats - use ISO format for consistent sorting
+            current_time = datetime.utcnow().isoformat() + 'Z'
             mongo.db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
@@ -137,17 +141,18 @@ class RepositoryService:
                     'directory_count': stats['directory_count'],
                     'total_size': stats['total_size'],
                     'languages': stats['languages'],
-                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+                    'updated_at': current_time
                 }}
             )
         except Exception as e:
-            # Update repository status to failed
+            # Update repository status to failed - use ISO format for consistent sorting
+            current_time = datetime.utcnow().isoformat() + 'Z'
             mongo.db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'failed',
                     'error': str(e),
-                    'updated_at': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+                    'updated_at': current_time
                 }}
             )
 
@@ -596,11 +601,21 @@ class RepositoryService:
             # Calculate skip value for pagination
             skip = (page - 1) * limit
             
-            # Determine sort direction
-            sort_direction = -1 if sort_dir.lower() == 'desc' else 1
+            # Always ensure we're sorting by created_at in descending order
+            # This guarantees that newly cloned repositories appear at the top
+            sort_direction = -1  # Always descending for created_at
             
-            # Get repositories from database
-            cursor = mongo.db.repositories.find().sort(sort_by, sort_direction).skip(skip).limit(limit)
+            # Create MongoDB aggregation pipeline to ensure proper date-based sorting
+            pipeline = [
+                # Sort by created_at in descending order
+                {"$sort": {"created_at": -1}},
+                # Apply pagination
+                {"$skip": skip},
+                {"$limit": limit}
+            ]
+            
+            # Execute the aggregation pipeline
+            cursor = mongo.db.repositories.aggregate(pipeline)
             repositories = list(cursor)
             
             # Get total count for pagination

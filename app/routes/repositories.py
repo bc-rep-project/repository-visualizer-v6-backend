@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request
 from app.services.repository_service import RepositoryService
 from app.services.enhanced_repository_service import EnhancedRepositoryService
-from app import limiter
+from app import limiter, mongo
+from flask_pymongo import PyMongo
 
 repo_bp = Blueprint('repositories', __name__, url_prefix='')
 
@@ -137,3 +138,68 @@ def debug_repository_analysis(repo_id):
         }), 200
     except Exception as e:
         return jsonify({'error': f'Failed to analyze repository: {str(e)}'}), 500
+
+@repo_bp.route('/api/repositories/update-dates', methods=['POST'])
+@limiter.limit("5 per minute")
+def update_repository_dates():
+    """Update all repository dates to ISO format for consistent sorting."""
+    try:
+        from datetime import datetime
+        import re
+        
+        # Find all repositories
+        repositories = mongo.db.repositories.find({})
+        
+        update_count = 0
+        
+        for repo in repositories:
+            repo_id = repo['_id']
+            created_at = repo.get('created_at')
+            updated_at = repo.get('updated_at')
+            
+            updates = {}
+            
+            # Check if created_at is not in ISO format
+            if created_at and not created_at.endswith('Z'):
+                try:
+                    # Parse the date from the format: Tue, 18 Mar 2025 20:26:14 GMT
+                    if isinstance(created_at, str) and re.match(r'[A-Za-z]+, \d+ [A-Za-z]+ \d+ \d+:\d+:\d+ GMT', created_at):
+                        date = datetime.strptime(created_at, '%a, %d %b %Y %H:%M:%S GMT')
+                        iso_date = date.isoformat() + 'Z'
+                        updates['created_at'] = iso_date
+                    else:
+                        # Fall back to current time if parsing fails
+                        updates['created_at'] = datetime.utcnow().isoformat() + 'Z'
+                except Exception:
+                    # If parsing fails, set to current time
+                    updates['created_at'] = datetime.utcnow().isoformat() + 'Z'
+            
+            # Check if updated_at is not in ISO format
+            if updated_at and not updated_at.endswith('Z'):
+                try:
+                    # Parse the date from the format: Tue, 18 Mar 2025 20:26:14 GMT
+                    if isinstance(updated_at, str) and re.match(r'[A-Za-z]+, \d+ [A-Za-z]+ \d+ \d+:\d+:\d+ GMT', updated_at):
+                        date = datetime.strptime(updated_at, '%a, %d %b %Y %H:%M:%S GMT')
+                        iso_date = date.isoformat() + 'Z'
+                        updates['updated_at'] = iso_date
+                    else:
+                        # Fall back to current time if parsing fails
+                        updates['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+                except Exception:
+                    # If parsing fails, set to current time
+                    updates['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+            
+            # Apply updates if needed
+            if updates:
+                mongo.db.repositories.update_one(
+                    {'_id': repo_id},
+                    {'$set': updates}
+                )
+                update_count += 1
+        
+        return jsonify({
+            'message': f'Updated dates for {update_count} repositories to ISO format',
+            'success': True
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'success': False}), 500

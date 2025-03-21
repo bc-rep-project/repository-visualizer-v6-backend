@@ -42,6 +42,14 @@ def create_app(config_name='default'):
     db_name = app.config['MONGO_URI'].split('/')[-1]
     mongo = mongo[db_name]
     
+    # Ensure indexes exist for better query performance
+    # This is especially important for sorting operations
+    try:
+        # Create index on created_at field for proper chronological ordering
+        mongo.db.repositories.create_index([("created_at", -1)])  # -1 for descending order
+    except Exception as e:
+        app.logger.warning(f"Error creating indexes: {e}")
+    
     # Initialize rate limiter
     global limiter
     limiter = Limiter(
