@@ -9,24 +9,110 @@ repo_bp = Blueprint('repositories', __name__, url_prefix='')
 @repo_bp.route('/api/repositories', methods=['GET'])
 @limiter.limit("30 per minute")
 def get_repositories():
-    """Get all repositories."""
+    """Get all repositories with optional filtering."""
     try:
-        # Get query parameters
-        page = request.args.get('page', 1, type=int)
-        limit = min(request.args.get('limit', 10, type=int), 50)  # Cap at 50
+        # Get pagination parameters
+        page = request.args.get('page', '1')
+        limit = request.args.get('limit', '10')
         sort_by = request.args.get('sort', 'created_at')
         sort_dir = request.args.get('dir', 'desc')
         
-        # Get repositories
-        repositories = RepositoryService.get_repositories(
+        # Get filter parameters
+        status = request.args.get('status', 'All Status')
+        language = request.args.get('language', 'All Languages')
+        size_range = request.args.get('size', 'Size Range')
+        search = request.args.get('search', '')
+        
+        # Parse size range if provided
+        size_min = 0
+        size_max = float('inf')
+        if size_range != 'Size Range':
+            if '<' in size_range:
+                # Less than X MB
+                size_max = float(size_range.replace('< ', '').replace(' MB', ''))
+            elif '>' in size_range:
+                # Greater than X MB
+                size_min = float(size_range.replace('> ', '').replace(' MB', ''))
+            elif '-' in size_range:
+                # Range X-Y MB
+                parts = size_range.replace(' MB', '').split('-')
+                size_min = float(parts[0])
+                size_max = float(parts[1])
+        
+        # Convert page and limit to integers
+        try:
+            page = int(page)
+            limit = int(limit)
+            
+            # Ensure minimum values
+            page = max(1, page)
+            limit = max(1, min(100, limit))  # Limit between 1 and 100
+        except ValueError:
+            page = 1
+            limit = 10
+        
+        # Print debug info
+        print("DEBUG: Request parameters:")
+        print(f"page: {page}, limit: {limit}, sort_by: {sort_by}, sort_dir: {sort_dir}")
+        print(f"status: {status}, language: {language}, size_range: {size_range}, search: {search}")
+        
+        # Create filter dictionary
+        filters = {
+            'status': status,
+            'language': language,
+            'size_min': size_min,
+            'size_max': size_max,
+            'search': search
+        }
+        
+        print(f"DEBUG: Filter dictionary: {filters}")
+        
+        # Debug: Direct MongoDB query for language
+        if language and language != 'All Languages':
+            print(f"DEBUG: Direct MongoDB query for language '{language}'")
+            
+            # Test with dot prefix
+            dot_query = {f'languages..{language}': {'$exists': True}}
+            dot_count = mongo.db.repositories.count_documents(dot_query)
+            print(f"Query with dot prefix: {dot_query}")
+            print(f"Result count: {dot_count}")
+            
+            # Test without dot prefix
+            no_dot_query = {f'languages.{language}': {'$exists': True}}
+            no_dot_count = mongo.db.repositories.count_documents(no_dot_query)
+            print(f"Query without dot prefix: {no_dot_query}")
+            print(f"Result count: {no_dot_count}")
+            
+            # Check each repository's languages
+            print("Checking each repository's languages:")
+            for repo in mongo.db.repositories.find():
+                repo_name = repo.get('repo_name', 'Unknown')
+                languages = repo.get('languages', {})
+                print(f"Repository: {repo_name}")
+                print(f"Languages: {languages}")
+                
+                # Check if language exists with dot prefix
+                dot_key = f'.{language}'
+                if dot_key in languages:
+                    print(f"Language '{dot_key}' found with dot prefix")
+                
+                # Check if language exists without dot prefix
+                if language in languages:
+                    print(f"Language '{language}' found without dot prefix")
+        
+        # Get repositories with pagination and filters
+        result = RepositoryService.get_repositories(
             page=page,
             limit=limit,
             sort_by=sort_by,
-            sort_dir=sort_dir
+            sort_dir=sort_dir,
+            filters=filters
         )
         
-        return jsonify(repositories)
+        # Return result
+        return jsonify(result), 200
     except Exception as e:
+        print(f"Error getting repositories: {e}")
         return jsonify({'error': str(e)}), 500
 
 @repo_bp.route('/api/repositories', methods=['POST'])

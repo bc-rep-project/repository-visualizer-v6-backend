@@ -32,7 +32,11 @@ class RepositoryService:
             
             # Language filter
             if 'language' in filters and filters['language'] not in ['all', 'All Languages']:
-                query['languages.' + filters['language']] = {'$exists': True}
+                language_key = filters['language']
+                # Ensure language key has a dot prefix
+                if not language_key.startswith('.'):
+                    language_key = '.' + language_key
+                query['languages.' + language_key] = {'$exists': True}
             
             # Size filter
             if 'size_min' in filters and 'size_max' in filters:
@@ -595,44 +599,91 @@ class RepositoryService:
         return dependencies
 
     @staticmethod
-    def get_repositories(page=1, limit=10, sort_by='created_at', sort_dir='desc'):
-        """Get all repositories with pagination."""
+    def get_repositories(page=1, limit=10, sort_by='created_at', sort_dir='desc', filters=None):
+        """Get all repositories with pagination and filters."""
         try:
-            # Calculate skip value for pagination
-            skip = (page - 1) * limit
+            # Initialize the query object for base filters
+            query = {}
+            language_filter = None
             
-            # Always ensure we're sorting by created_at in descending order
-            # This guarantees that newly cloned repositories appear at the top
-            sort_direction = -1  # Always descending for created_at
+            # Apply filters if provided
+            if filters:
+                # Status filter
+                if 'status' in filters and filters['status'] not in ['all', 'All Status']:
+                    query['status'] = filters['status'].lower()
+                
+                # Language filter - store for manual processing
+                if 'language' in filters and filters['language'] not in ['all', 'All Languages']:
+                    language_key = filters['language']
+                    # Store the language filter for manual processing
+                    language_filter = '.' + language_key.lstrip('.')
+                    print(f"DEBUG: Will manually filter for language key: {language_filter}")
+                
+                # Size filter
+                if 'size_min' in filters and 'size_max' in filters:
+                    try:
+                        size_min = float(filters['size_min'])
+                        size_max = float(filters['size_max'])
+                        
+                        # Only apply if we have reasonable values
+                        if size_min >= 0 and size_max > size_min:
+                            if size_max < float('inf'):
+                                query['total_size'] = {'$gte': size_min * 1024 * 1024, '$lte': size_max * 1024 * 1024}
+                            else:
+                                query['total_size'] = {'$gte': size_min * 1024 * 1024}
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Search filter
+                if 'search' in filters and filters['search']:
+                    search_term = filters['search']
+                    query['$or'] = [
+                        {'repo_url': {'$regex': search_term, '$options': 'i'}},
+                        {'repo_name': {'$regex': search_term, '$options': 'i'}}
+                    ]
             
-            # Create MongoDB aggregation pipeline to ensure proper date-based sorting
-            pipeline = [
-                # Sort by created_at in descending order
-                {"$sort": {"created_at": -1}},
-                # Apply pagination
-                {"$skip": skip},
-                {"$limit": limit}
-            ]
+            # Print debug information
+            print(f"DEBUG: Base MongoDB query: {query}")
             
-            # Execute the aggregation pipeline
-            cursor = mongo.db.repositories.aggregate(pipeline)
-            repositories = list(cursor)
+            # Execute base query and get all repositories
+            # We'll manually filter for language and handle pagination afterwards
+            all_repos = list(mongo.db.repositories.find(query).sort('created_at', -1))
+            
+            # Apply language filter manually if needed
+            if language_filter:
+                print(f"DEBUG: Manually filtering for {language_filter} in languages field")
+                filtered_repos = []
+                for repo in all_repos:
+                    languages = repo.get('languages', {})
+                    if language_filter in languages:
+                        filtered_repos.append(repo)
+                        print(f"DEBUG: Matched repo: {repo.get('_id')}, {repo.get('repo_name')}")
+                all_repos = filtered_repos
             
             # Get total count for pagination
-            total = mongo.db.repositories.count_documents({})
+            total = len(all_repos)
+            
+            # Apply pagination
+            start_idx = (page - 1) * limit
+            end_idx = min(start_idx + limit, total)
+            paginated_repos = all_repos[start_idx:end_idx] if start_idx < total else []
+            
+            print(f"DEBUG: Found {total} repositories, returning {len(paginated_repos)}")
             
             return {
-                'repositories': repositories,
+                'repositories': paginated_repos,
                 'pagination': {
                     'page': page,
                     'limit': limit,
                     'total': total,
-                    'pages': (total + limit - 1) // limit  # Ceiling division
+                    'pages': (total + limit - 1) // limit if limit > 0 else 0  # Ceiling division
                 }
             }
         except Exception as e:
             print(f"Error getting repositories: {e}")
-            return {'repositories': [], 'pagination': {'page': page, 'limit': limit, 'total': 0, 'pages': 0}} 
+            import traceback
+            traceback.print_exc()
+            return {'repositories': [], 'pagination': {'page': page, 'limit': limit, 'total': 0, 'pages': 0}}
 
     @staticmethod
     def _register_exported_function(file_path, func_name):
@@ -747,5 +798,46 @@ class RepositoryService:
         }
         
         return language_map.get(extension, 'text')
+
+    @staticmethod
+    def get_all_languages():
+        """Get all languages used across repositories."""
+        try:
+            # Create an aggregation pipeline to extract all languages
+            pipeline = [
+                # Unwind each language entry to get individual languages
+                {"$project": {
+                    "languages": {"$objectToArray": "$languages"}
+                }},
+                {"$unwind": "$languages"},
+                # Group by language name and count occurrences
+                {"$group": {
+                    "_id": "$languages.k",
+                    "count": {"$sum": 1}
+                }},
+                # Sort by count descending
+                {"$sort": {"count": -1}}
+            ]
+            
+            # Execute the aggregation
+            cursor = mongo.db.repositories.aggregate(pipeline)
+            
+            # Clean up language names by removing dots and transform to a list
+            languages = []
+            for doc in cursor:
+                lang = doc["_id"]
+                # Store without the dot prefix for UI display
+                # We will add the dot back when filtering
+                languages.append(lang.lstrip('.') if lang.startswith('.') else lang)
+            
+            # Print for debugging
+            print(f"DEBUG: Languages found in database: {languages}")
+            
+            return languages
+        except Exception as e:
+            print(f"Error getting languages: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 _exported_functions = {}  # Global registry of exported functions 
