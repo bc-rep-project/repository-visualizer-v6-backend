@@ -15,7 +15,6 @@ def get_settings():
             "codeHighlightTheme": "github",
             "defaultVisualization": "graph",
             "autoAnalyze": False,
-            "notificationsEnabled": True,
             "language": "en",
         }
         mongo.settings.insert_one(default_settings)
@@ -51,7 +50,6 @@ def reset_settings():
         "codeHighlightTheme": "github",
         "defaultVisualization": "graph",
         "autoAnalyze": False,
-        "notificationsEnabled": True,
         "language": "en",
     }
     

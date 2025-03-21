@@ -63,7 +63,6 @@ def create_app(config_name='default'):
     from app.routes.repository_analysis import repo_analysis_bp
     from app.routes.dashboard import dashboard_bp
     from app.routes.search import search_bp
-    from app.routes.notifications import notifications_bp
     from app.routes.settings import settings_bp
     
     # Register blueprints
@@ -74,7 +73,6 @@ def create_app(config_name='default'):
     app.register_blueprint(repo_analysis_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(search_bp)
-    app.register_blueprint(notifications_bp)
     app.register_blueprint(settings_bp)
     
     @app.errorhandler(500)
