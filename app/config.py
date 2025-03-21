@@ -7,7 +7,7 @@ class Config:
     MONGO_URI = os.environ.get('DATABASE_URL', 'mongodb://localhost:27017/repo_visualizer')
     MONGO_TLS = os.environ.get('MONGO_TLS', 'false').lower() == 'true'
     MONGO_TLS_INSECURE = os.environ.get('MONGO_TLS_INSECURE', 'false').lower() == 'true'
-    CORS_ORIGINS = eval(os.environ.get('CORS_ORIGINS', '["http://localhost:3000"]'))
+    CORS_ORIGINS = eval(os.environ.get('CORS_ORIGINS', '["http://localhost:3000", "https://repository-visualizer-v6-frontend.vercel.app", "https://repo-visualizer.vercel.app"]'))
     REDIS_URL = os.environ.get('REDIS_URL', None)
     RATELIMIT_STORAGE_OPTIONS = {}
     REPO_STORAGE_DIR = os.environ.get('REPO_STORAGE_DIR', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'repos'))

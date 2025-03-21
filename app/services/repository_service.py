@@ -670,4 +670,67 @@ class RepositoryService:
         
         return None
 
+    @staticmethod
+    def _get_language_from_extension(extension: str) -> str:
+        """Get programming language from file extension."""
+        extension = extension.lower().lstrip('.')
+        language_map = {
+            # Web languages
+            'html': 'html',
+            'htm': 'html',
+            'css': 'css',
+            'scss': 'scss',
+            'sass': 'sass',
+            'less': 'less',
+            
+            # JavaScript family
+            'js': 'javascript',
+            'jsx': 'jsx',
+            'ts': 'typescript',
+            'tsx': 'tsx',
+            'json': 'json',
+            
+            # Backend languages
+            'py': 'python',
+            'rb': 'ruby',
+            'php': 'php',
+            'java': 'java',
+            'c': 'c',
+            'h': 'c',
+            'cpp': 'cpp',
+            'hpp': 'cpp',
+            'cs': 'csharp',
+            'go': 'go',
+            'rs': 'rust',
+            'swift': 'swift',
+            'kt': 'kotlin',
+            
+            # Config and data files
+            'yml': 'yaml',
+            'yaml': 'yaml',
+            'xml': 'xml',
+            'toml': 'toml',
+            'ini': 'ini',
+            'cfg': 'ini',
+            'conf': 'ini',
+            
+            # Shell scripts
+            'sh': 'bash',
+            'bash': 'bash',
+            'zsh': 'bash',
+            'bat': 'batch',
+            'ps1': 'powershell',
+            
+            # Documentation
+            'md': 'markdown',
+            'markdown': 'markdown',
+            'rst': 'restructuredtext',
+            'txt': 'text',
+            
+            # Database
+            'sql': 'sql',
+        }
+        
+        return language_map.get(extension, 'text')
+
 _exported_functions = {}  # Global registry of exported functions 

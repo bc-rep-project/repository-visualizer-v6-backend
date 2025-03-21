@@ -24,10 +24,11 @@ def create_app(config_name='default'):
     
     # Initialize CORS with proper configuration
     CORS(app, 
-         resources={r"/*": {"origins": app.config['CORS_ORIGINS']}}, 
+         resources={r"/*": {"origins": "*"}},  # Allow all origins for now
          supports_credentials=True,
-         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Origin"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         expose_headers=["Content-Type", "Authorization"])
     
     # Initialize MongoDB
     global mongo
