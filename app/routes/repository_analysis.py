@@ -135,17 +135,56 @@ def get_file_content(repo_id):
     if not os.path.isfile(absolute_file_path):
         return jsonify({'error': 'File not found'}), 404
     
+    # Get file size
+    size = os.path.getsize(absolute_file_path)
+    
+    # Check if file is too large (limit to 1MB for text files)
+    if size > 1024 * 1024:  # 1MB
+        return jsonify({'error': 'File is too large to display'}), 413
+    
+    # Determine file language based on extension
+    _, ext = os.path.splitext(file_path)
+    language = RepositoryService._get_language_from_extension(ext)
+    
+    # Check if file is binary (common binary extensions)
+    binary_extensions = ['.exe', '.dll', '.so', '.bin', '.dat', '.jpg', '.jpeg', '.png', '.gif', '.ico', 
+                          '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.tar', '.gz', '.rar']
+    if ext.lower() in binary_extensions:
+        return jsonify({
+            'file': {
+                'name': os.path.basename(file_path),
+                'path': file_path,
+                'size': size,
+                'language': language,
+                'is_binary': True,
+                'content': f"Binary file: {os.path.basename(file_path)} ({size} bytes)"
+            }
+        }), 200
+    
     # Read file content
     try:
+        # Try to detect if the file is binary by reading the first few bytes
+        is_binary = False
+        with open(absolute_file_path, 'rb') as f:
+            sample = f.read(1024)
+            if b'\x00' in sample:  # Null bytes typically indicate binary data
+                is_binary = True
+        
+        if is_binary:
+            return jsonify({
+                'file': {
+                    'name': os.path.basename(file_path),
+                    'path': file_path,
+                    'size': size,
+                    'language': language,
+                    'is_binary': True,
+                    'content': f"Binary file: {os.path.basename(file_path)} ({size} bytes)"
+                }
+            }), 200
+        
+        # Read the file as text
         with open(absolute_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
-        # Determine file language based on extension
-        _, ext = os.path.splitext(file_path)
-        language = RepositoryService._get_language_from_extension(ext)
-        
-        # Get file size
-        size = os.path.getsize(absolute_file_path)
         
         return jsonify({
             'file': {
@@ -153,10 +192,19 @@ def get_file_content(repo_id):
                 'path': file_path,
                 'size': size,
                 'language': language,
+                'is_binary': False,
                 'content': content
             }
         }), 200
     except UnicodeDecodeError:
-        return jsonify({'error': 'File is not a text file'}), 400
-    except Exception as e:
-        return jsonify({'error': f'Error reading file: {str(e)}'}), 500 
+        # Handle case where file cannot be decoded as UTF-8 (likely binary)
+        return jsonify({
+            'file': {
+                'name': os.path.basename(file_path),
+                'path': file_path,
+                'size': size,
+                'language': language,
+                'is_binary': True,
+                'content': f"Binary file: {os.path.basename(file_path)} ({size} bytes)"
+            }
+        }), 200 
