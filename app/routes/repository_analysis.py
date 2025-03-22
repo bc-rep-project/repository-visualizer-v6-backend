@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from app.services.repository_service import RepositoryService
 from app import limiter
 import os
+import re
 
 repo_analysis_bp = Blueprint('repository_analysis', __name__, url_prefix='/api/repositories')
 
@@ -207,4 +208,133 @@ def get_file_content(repo_id):
                 'is_binary': True,
                 'content': f"Binary file: {os.path.basename(file_path)} ({size} bytes)"
             }
-        }), 200 
+        }), 200
+
+@repo_analysis_bp.route('/<repo_id>/function-content', methods=['GET'])
+@limiter.limit("100/minute")
+def get_function_class_content(repo_id):
+    """Get the content of a specific function or class from a file."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Get parameters from query
+    file_path = request.args.get('path')
+    name = request.args.get('name')
+    type_of_content = request.args.get('type', 'function')  # 'function', 'class', or 'method'
+    
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+    
+    if not name:
+        return jsonify({'error': 'Function or class name is required'}), 400
+    
+    # Get repository path
+    repo_path = repository.get('repo_path')
+    if not repo_path or not os.path.exists(repo_path):
+        return jsonify({'error': 'Repository directory not found'}), 404
+    
+    # Construct absolute file path
+    absolute_file_path = os.path.join(repo_path, file_path.lstrip('/'))
+    
+    # Check if file exists
+    if not os.path.isfile(absolute_file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    try:
+        # Read the file content
+        with open(absolute_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Determine file language based on extension
+        _, ext = os.path.splitext(file_path)
+        language = RepositoryService._get_language_from_extension(ext)
+        
+        # Extract the function or class content based on its name and type
+        extracted_content = ''
+        line_start = 0
+        line_end = 0
+        
+        if type_of_content in ['function', 'method']:
+            # Match function or method definition patterns for different languages
+            patterns = []
+            if language == 'javascript' or language == 'typescript':
+                # JavaScript/TypeScript patterns
+                patterns = [
+                    # Function declaration
+                    rf'(?:export\s+)?(?:async\s+)?function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{[\s\S]*?\}}',
+                    # Function expression
+                    rf'(?:export\s+)?const\s+{re.escape(name)}\s*=\s*(?:async\s+)?function\s*\([^)]*\)\s*\{{[\s\S]*?\}}',
+                    # Arrow function
+                    rf'(?:export\s+)?const\s+{re.escape(name)}\s*=\s*(?:async\s+)?\([^)]*\)\s*=>\s*\{{[\s\S]*?\}}',
+                    # Method in a class
+                    rf'(?:async\s+)?{re.escape(name)}\s*\([^)]*\)\s*\{{[\s\S]*?\}}'
+                ]
+            elif language == 'python':
+                # Python function pattern
+                patterns = [
+                    rf'def\s+{re.escape(name)}\s*\([^)]*\):[^\n]*(?:\n(?:[ \t]+[^\n]*)?)*'
+                ]
+            elif language == 'java':
+                # Java method pattern
+                patterns = [
+                    rf'(?:public|private|protected)?\s+(?:static\s+)?[\w<>[\]]+\s+{re.escape(name)}\s*\([^)]*\)\s*\{{[\s\S]*?\}}'
+                ]
+        
+        elif type_of_content == 'class':
+            # Match class definition patterns for different languages
+            if language == 'javascript' or language == 'typescript':
+                # JavaScript/TypeScript class pattern
+                patterns = [
+                    rf'(?:export\s+)?class\s+{re.escape(name)}\s*(?:extends\s+\w+)?\s*\{{[\s\S]*?\}}'
+                ]
+            elif language == 'python':
+                # Python class pattern
+                patterns = [
+                    rf'class\s+{re.escape(name)}[^\n]*:[^\n]*(?:\n(?:[ \t]+[^\n]*)?)*'
+                ]
+            elif language == 'java':
+                # Java class pattern
+                patterns = [
+                    rf'(?:public|private|protected)?\s*class\s+{re.escape(name)}\s*(?:extends\s+\w+)?\s*(?:implements\s+[^{{]+)?\s*\{{[\s\S]*?\}}'
+                ]
+        
+        # Try each pattern to find the function or class
+        for pattern in patterns:
+            matches = re.finditer(pattern, content)
+            for match in matches:
+                extracted_content = match.group(0)
+                # Calculate line numbers
+                content_before = content[:match.start()]
+                line_start = content_before.count('\n') + 1
+                line_end = line_start + extracted_content.count('\n')
+                break
+            if extracted_content:
+                break
+        
+        if not extracted_content:
+            return jsonify({
+                'error': f'{type_of_content.capitalize()} {name} not found in file'
+            }), 404
+        
+        return jsonify({
+            'content': extracted_content,
+            'line_start': line_start,
+            'line_end': line_end,
+            'language': language,
+            'name': name,
+            'type': type_of_content,
+            'file_path': file_path
+        }), 200
+        
+    except UnicodeDecodeError:
+        return jsonify({
+            'error': 'File cannot be decoded as text'
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'error': f'Error extracting {type_of_content}: {str(e)}'
+        }), 500 
