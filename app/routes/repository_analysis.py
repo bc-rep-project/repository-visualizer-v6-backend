@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.services.repository_service import RepositoryService
-from app import limiter
+from app import limiter, mongo
+from datetime import datetime
 import os
 
 repo_analysis_bp = Blueprint('repository_analysis', __name__, url_prefix='/api/repositories')
@@ -207,4 +208,38 @@ def get_file_content(repo_id):
                 'is_binary': True,
                 'content': f"Binary file: {os.path.basename(file_path)} ({size} bytes)"
             }
-        }), 200 
+        }), 200
+
+@repo_analysis_bp.route('/<repo_id>/analysis/save', methods=['POST'])
+@limiter.limit("10/minute")
+def save_repository_analysis(repo_id):
+    """Save repository analysis to MongoDB."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Get analysis data from request body
+    analysis_data = request.json
+    if not analysis_data:
+        # If no data provided, perform analysis
+        analysis_data = RepositoryService.analyze_repository_code(repo_id)
+    
+    # Save analysis to MongoDB
+    mongo.repository_analyses.update_one(
+        {'repository_id': repo_id},
+        {'$set': {
+            'repository_id': repo_id,
+            'analysis': analysis_data,
+            'updated_at': datetime.utcnow().isoformat() + 'Z',
+            'last_manual_save': datetime.utcnow().isoformat() + 'Z'
+        }},
+        upsert=True
+    )
+    
+    return jsonify({
+        'message': 'Repository analysis saved successfully',
+        'repository_id': repo_id
+    }), 200 

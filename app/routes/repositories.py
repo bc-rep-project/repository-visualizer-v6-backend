@@ -1,8 +1,11 @@
 from flask import Blueprint, jsonify, request
 from app.services.repository_service import RepositoryService
 from app.services.enhanced_repository_service import EnhancedRepositoryService
+from bson import ObjectId
 from app import limiter, mongo
 from flask_pymongo import PyMongo
+from datetime import datetime
+import os
 
 repo_bp = Blueprint('repositories', __name__, url_prefix='')
 
@@ -73,19 +76,19 @@ def get_repositories():
             
             # Test with dot prefix
             dot_query = {f'languages..{language}': {'$exists': True}}
-            dot_count = mongo.db.repositories.count_documents(dot_query)
+            dot_count = mongo.repositories.count_documents(dot_query)
             print(f"Query with dot prefix: {dot_query}")
             print(f"Result count: {dot_count}")
             
             # Test without dot prefix
             no_dot_query = {f'languages.{language}': {'$exists': True}}
-            no_dot_count = mongo.db.repositories.count_documents(no_dot_query)
+            no_dot_count = mongo.repositories.count_documents(no_dot_query)
             print(f"Query without dot prefix: {no_dot_query}")
             print(f"Result count: {no_dot_count}")
             
             # Check each repository's languages
             print("Checking each repository's languages:")
-            for repo in mongo.db.repositories.find():
+            for repo in mongo.repositories.find():
                 repo_name = repo.get('repo_name', 'Unknown')
                 languages = repo.get('languages', {})
                 print(f"Repository: {repo_name}")
@@ -230,11 +233,10 @@ def debug_repository_analysis(repo_id):
 def update_repository_dates():
     """Update all repository dates to ISO format for consistent sorting."""
     try:
-        from datetime import datetime
         import re
         
         # Find all repositories
-        repositories = mongo.db.repositories.find({})
+        repositories = mongo.repositories.find({})
         
         update_count = 0
         
@@ -277,7 +279,7 @@ def update_repository_dates():
             
             # Apply updates if needed
             if updates:
-                mongo.db.repositories.update_one(
+                mongo.repositories.update_one(
                     {'_id': repo_id},
                     {'$set': updates}
                 )
@@ -289,3 +291,95 @@ def update_repository_dates():
         })
     except Exception as e:
         return jsonify({'error': str(e), 'success': False}), 500
+
+@repo_bp.route('/api/repositories/<repo_id>/enhanced/save', methods=['POST'])
+@limiter.limit("10/minute")
+def save_enhanced_repository_analysis(repo_id):
+    """Save enhanced repository analysis to MongoDB."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Get enhanced analysis data from request body
+    enhanced_data = request.json
+    if not enhanced_data:
+        # If no data provided, try to get it from EnhancedRepositoryService
+        try:
+            from app.services.enhanced_repository_service import EnhancedRepositoryService
+            print(f"Generating enhanced analysis for repository {repo_id}")
+            enhanced_data = EnhancedRepositoryService.analyze_repository_code(repo_id)
+            if not enhanced_data:
+                return jsonify({'error': 'Failed to generate enhanced analysis: No data returned'}), 500
+            print(f"Successfully generated enhanced analysis for repository {repo_id}")
+        except ImportError as e:
+            print(f"Error importing EnhancedRepositoryService: {e}")
+            return jsonify({'error': 'Enhanced repository service is not available'}), 500
+        except Exception as e:
+            print(f"Error generating enhanced analysis: {e}")
+            return jsonify({'error': f'Failed to generate enhanced analysis: {str(e)}'}), 500
+    
+    try:
+        # Save enhanced analysis to MongoDB
+        mongo.enhanced_repository_analyses.update_one(
+            {'repository_id': repo_id},
+            {'$set': {
+                'repository_id': repo_id,
+                'enhanced_analysis': enhanced_data,
+                'updated_at': datetime.utcnow().isoformat() + 'Z',
+                'last_manual_save': datetime.utcnow().isoformat() + 'Z'
+            }},
+            upsert=True
+        )
+        
+        return jsonify({
+            'message': 'Enhanced repository analysis saved successfully',
+            'repository_id': repo_id
+        }), 200
+    except Exception as e:
+        print(f"Error saving enhanced analysis to MongoDB: {e}")
+        return jsonify({'error': f'Failed to save enhanced analysis: {str(e)}'}), 500
+
+@repo_bp.route('/api/repositories/<repo_id>/save', methods=['POST'])
+@limiter.limit("20/minute")
+def save_repository(repo_id):
+    """Save repository data to MongoDB."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    repo_path = repository.get('repo_path')
+    if not repo_path or not os.path.exists(repo_path):
+        return jsonify({'error': 'Repository directory not found'}), 404
+    
+    try:
+        # Get latest stats
+        stats = RepositoryService._get_repository_stats(repo_path)
+        
+        # Update repository with latest stats
+        mongo.repositories.update_one(
+            {'_id': ObjectId(repo_id)},
+            {'$set': {
+                'file_count': stats['file_count'],
+                'directory_count': stats['directory_count'],
+                'total_size': stats['total_size'],
+                'languages': stats['languages'],
+                'updated_at': datetime.utcnow().isoformat() + 'Z',
+                'last_manual_save': datetime.utcnow().isoformat() + 'Z'
+            }}
+        )
+        
+        # Get updated repository
+        updated_repo = RepositoryService.get_repository(repo_id)
+        
+        return jsonify({
+            'message': 'Repository saved successfully',
+            'repository': updated_repo
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to save repository: {str(e)}'}), 500

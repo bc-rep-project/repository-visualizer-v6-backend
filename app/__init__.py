@@ -38,15 +38,16 @@ def create_app(config_name='default'):
         if app.config.get('MONGO_TLS_INSECURE'):
             mongo_options['tlsAllowInvalidCertificates'] = app.config['MONGO_TLS_INSECURE']
 
-    mongo = MongoClient(app.config['MONGO_URI'], **mongo_options)
-    db_name = app.config['MONGO_URI'].split('/')[-1]
-    mongo = mongo[db_name]
+    client = MongoClient(app.config['MONGO_URI'], **mongo_options)
+    # Connect to the database (use 'Cluster0' since that's where the repositories are)
+    db_name = 'Cluster0'
+    mongo = client[db_name]
     
     # Ensure indexes exist for better query performance
     # This is especially important for sorting operations
     try:
         # Create index on created_at field for proper chronological ordering
-        mongo.db.repositories.create_index([("created_at", -1)])  # -1 for descending order
+        mongo.repositories.create_index([("created_at", -1)])  # -1 for descending order
     except Exception as e:
         app.logger.warning(f"Error creating indexes: {e}")
     
@@ -73,6 +74,7 @@ def create_app(config_name='default'):
     from app.routes.dashboard import dashboard_bp
     from app.routes.search import search_bp
     from app.routes.settings import settings_bp
+    from app.routes.auto_save import auto_save_bp
     
     # Register blueprints
     app.register_blueprint(root_bp)
@@ -83,9 +85,20 @@ def create_app(config_name='default'):
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(auto_save_bp)
     
     @app.errorhandler(500)
     def handle_500(error):
         return jsonify({'error': 'Internal Server Error', 'message': str(error)}), 500
+    
+    # Initialize auto-save service if enabled
+    try:
+        with app.app_context():
+            from app.services.auto_save_service import AutoSaveService
+            settings = mongo.settings.find_one({})
+            if settings and settings.get('autoSave', {}).get('repositories', False):
+                AutoSaveService.start()
+    except Exception as e:
+        app.logger.error(f"Error initializing auto-save service: {e}")
     
     return app

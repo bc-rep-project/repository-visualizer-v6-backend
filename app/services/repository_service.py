@@ -55,7 +55,7 @@ class RepositoryService:
                     {'repo_name': {'$regex': search_term, '$options': 'i'}}
                 ]
         
-        repositories = list(mongo.db.repositories.find(query))
+        repositories = list(mongo.repositories.find(query))
         
         # Convert ObjectId to string
         for repo in repositories:
@@ -70,7 +70,7 @@ class RepositoryService:
             return None
             
         try:
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = mongo.repositories.find_one({'_id': ObjectId(repo_id)})
             if repo:
                 repo['_id'] = str(repo['_id'])
             return repo
@@ -107,7 +107,7 @@ class RepositoryService:
         }
         
         # Insert into database
-        mongo.db.repositories.insert_one(repo)
+        mongo.repositories.insert_one(repo)
         
         # Convert ObjectId to string for JSON response
         repo['_id'] = str(repo['_id'])
@@ -137,7 +137,7 @@ class RepositoryService:
             
             # Update repository status and stats - use ISO format for consistent sorting
             current_time = datetime.utcnow().isoformat() + 'Z'
-            mongo.db.repositories.update_one(
+            mongo.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'completed',
@@ -151,7 +151,7 @@ class RepositoryService:
         except Exception as e:
             # Update repository status to failed - use ISO format for consistent sorting
             current_time = datetime.utcnow().isoformat() + 'Z'
-            mongo.db.repositories.update_one(
+            mongo.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'failed',
@@ -201,7 +201,7 @@ class RepositoryService:
             
         try:
             # Get repository
-            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = mongo.repositories.find_one({'_id': ObjectId(repo_id)})
             if not repo:
                 return False
             
@@ -211,7 +211,7 @@ class RepositoryService:
                 shutil.rmtree(repo_path, ignore_errors=True)
             
             # Delete from database
-            mongo.db.repositories.delete_one({'_id': ObjectId(repo_id)})
+            mongo.repositories.delete_one({'_id': ObjectId(repo_id)})
             
             return True
         except Exception as e:
@@ -647,7 +647,7 @@ class RepositoryService:
             
             # Execute base query and get all repositories
             # We'll manually filter for language and handle pagination afterwards
-            all_repos = list(mongo.db.repositories.find(query).sort('created_at', -1))
+            all_repos = list(mongo.repositories.find(query).sort('created_at', -1))
             
             # Apply language filter manually if needed
             if language_filter:
@@ -820,7 +820,7 @@ class RepositoryService:
             ]
             
             # Execute the aggregation
-            cursor = mongo.db.repositories.aggregate(pipeline)
+            cursor = mongo.repositories.aggregate(pipeline)
             
             # Clean up language names by removing dots and transform to a list
             languages = []
