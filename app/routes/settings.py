@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from bson.objectid import ObjectId
 from app import mongo
+from app.services.auto_save_service import AutoSaveService
 
 settings_bp = Blueprint('settings', __name__)
 
@@ -16,15 +17,23 @@ def get_settings():
             "defaultVisualization": "graph",
             "autoAnalyze": False,
             "language": "en",
-            "autoSave": {
-                "repositories": True,
-                "analysis": False,
-                "enhancedAnalysis": False,
-                "interval": 30
+            "auto_save": {
+                "enabled": False,
+                "interval": 3600,  # 1 hour in seconds
+                "last_run": None
             }
         }
         mongo.settings.insert_one(default_settings)
         settings = default_settings
+    
+    # If auto_save settings don't exist, add them
+    if "auto_save" not in settings:
+        settings["auto_save"] = {
+            "enabled": False,
+            "interval": 3600,  # 1 hour in seconds
+            "last_run": None
+        }
+        mongo.settings.update_one({}, {"$set": {"auto_save": settings["auto_save"]}})
     
     return jsonify(settings)
 
@@ -57,11 +66,10 @@ def reset_settings():
         "defaultVisualization": "graph",
         "autoAnalyze": False,
         "language": "en",
-        "autoSave": {
-            "repositories": True,
-            "analysis": False,
-            "enhancedAnalysis": False,
-            "interval": 30
+        "auto_save": {
+            "enabled": False,
+            "interval": 3600,  # 1 hour in seconds
+            "last_run": None
         }
     }
     
@@ -78,47 +86,46 @@ def update_auto_save_settings():
     if not data:
         return jsonify({"error": "No data provided"}), 400
     
-    # Get current settings
-    settings = mongo.settings.find_one({})
+    # Extract auto-save specific settings
+    enabled = data.get('enabled')
+    interval = data.get('interval')
     
-    if not settings:
-        # If no settings exist, create default settings
-        settings = {
-            "theme": "light",
-            "codeHighlightTheme": "github",
-            "defaultVisualization": "graph",
-            "autoAnalyze": False,
-            "language": "en",
-            "autoSave": {
-                "repositories": True,
-                "analysis": False,
-                "enhancedAnalysis": False,
-                "interval": 30
-            }
-        }
-        mongo.settings.insert_one(settings)
+    if enabled is None and interval is None:
+        return jsonify({"error": "No auto-save settings provided"}), 400
     
-    # Check if autoSave field exists
-    if 'autoSave' not in settings:
-        settings['autoSave'] = {
-            "repositories": True,
-            "analysis": False,
-            "enhancedAnalysis": False,
-            "interval": 30
-        }
+    # Update settings and start/stop auto-save as needed
+    if enabled is True:
+        result = AutoSaveService.start_auto_save(interval)
+        return jsonify(result), 200
+    elif enabled is False:
+        result = AutoSaveService.stop_auto_save()
+        return jsonify(result), 200
+    elif interval is not None:
+        # Just update the interval if provided
+        try:
+            interval = int(interval)
+            if interval < 300:  # Minimum 5 minutes
+                return jsonify({"error": "Interval must be at least 300 seconds (5 minutes)"}), 400
+            
+            # Update interval in settings
+            mongo.settings.update_one(
+                {}, 
+                {"$set": {"auto_save.interval": interval}},
+                upsert=True
+            )
+            
+            # If auto-save is running, update the interval
+            if AutoSaveService.get_status()["running"]:
+                AutoSaveService.stop_auto_save()
+                result = AutoSaveService.start_auto_save(interval)
+                return jsonify(result), 200
+            else:
+                return jsonify({
+                    "status": "updated", 
+                    "message": f"Auto-save interval updated to {interval} seconds"
+                }), 200
+            
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid interval value"}), 400
     
-    # Update only the provided auto-save settings
-    for key, value in data.items():
-        settings['autoSave'][key] = value
-    
-    # Update settings in the database
-    result = mongo.settings.update_one(
-        {}, 
-        {"$set": {"autoSave": settings['autoSave']}},
-        upsert=True
-    )
-    
-    if result.modified_count > 0 or result.upserted_id:
-        return jsonify({"message": "Auto-save settings updated successfully", "autoSave": settings['autoSave']})
-    else:
-        return jsonify({"message": "No changes in auto-save settings", "autoSave": settings['autoSave']}) 
+    return jsonify({"error": "Invalid auto-save settings"}), 400 

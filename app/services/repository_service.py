@@ -55,8 +55,7 @@ class RepositoryService:
                     {'repo_name': {'$regex': search_term, '$options': 'i'}}
                 ]
         
-        # Always sort by created_at in descending order to ensure newest repositories are at the top
-        repositories = list(mongo.repositories.find(query).sort('created_at', -1))
+        repositories = list(mongo.db.repositories.find(query))
         
         # Convert ObjectId to string
         for repo in repositories:
@@ -71,7 +70,7 @@ class RepositoryService:
             return None
             
         try:
-            repo = mongo.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
             if repo:
                 repo['_id'] = str(repo['_id'])
             return repo
@@ -108,7 +107,7 @@ class RepositoryService:
         }
         
         # Insert into database
-        mongo.repositories.insert_one(repo)
+        mongo.db.repositories.insert_one(repo)
         
         # Convert ObjectId to string for JSON response
         repo['_id'] = str(repo['_id'])
@@ -138,7 +137,7 @@ class RepositoryService:
             
             # Update repository status and stats - use ISO format for consistent sorting
             current_time = datetime.utcnow().isoformat() + 'Z'
-            mongo.repositories.update_one(
+            mongo.db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'completed',
@@ -152,7 +151,7 @@ class RepositoryService:
         except Exception as e:
             # Update repository status to failed - use ISO format for consistent sorting
             current_time = datetime.utcnow().isoformat() + 'Z'
-            mongo.repositories.update_one(
+            mongo.db.repositories.update_one(
                 {'_id': repo_id},
                 {'$set': {
                     'status': 'failed',
@@ -202,7 +201,7 @@ class RepositoryService:
             
         try:
             # Get repository
-            repo = mongo.repositories.find_one({'_id': ObjectId(repo_id)})
+            repo = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
             if not repo:
                 return False
             
@@ -212,7 +211,7 @@ class RepositoryService:
                 shutil.rmtree(repo_path, ignore_errors=True)
             
             # Delete from database
-            mongo.repositories.delete_one({'_id': ObjectId(repo_id)})
+            mongo.db.repositories.delete_one({'_id': ObjectId(repo_id)})
             
             return True
         except Exception as e:
@@ -646,9 +645,9 @@ class RepositoryService:
             # Print debug information
             print(f"DEBUG: Base MongoDB query: {query}")
             
-            # Always sort by created_at in descending order to ensure newest repositories are at the top
-            # This ensures chronological order with newest first, regardless of the sort_by parameter
-            all_repos = list(mongo.repositories.find(query).sort('created_at', -1))
+            # Execute base query and get all repositories
+            # We'll manually filter for language and handle pagination afterwards
+            all_repos = list(mongo.db.repositories.find(query).sort('created_at', -1))
             
             # Apply language filter manually if needed
             if language_filter:
@@ -684,7 +683,7 @@ class RepositoryService:
             print(f"Error getting repositories: {e}")
             import traceback
             traceback.print_exc()
-            return {'repositories': [], 'pagination': {'page': page, 'limit': limit, 'total': 0, 'pages': 0}}
+            return {'repositories': [], 'pagination': {'page': page, 'limit': limit, 'total': 0, 'pages': 0}} 
 
     @staticmethod
     def _register_exported_function(file_path, func_name):
@@ -821,7 +820,7 @@ class RepositoryService:
             ]
             
             # Execute the aggregation
-            cursor = mongo.repositories.aggregate(pipeline)
+            cursor = mongo.db.repositories.aggregate(pipeline)
             
             # Clean up language names by removing dots and transform to a list
             languages = []

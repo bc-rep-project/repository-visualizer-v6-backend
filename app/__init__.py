@@ -38,16 +38,15 @@ def create_app(config_name='default'):
         if app.config.get('MONGO_TLS_INSECURE'):
             mongo_options['tlsAllowInvalidCertificates'] = app.config['MONGO_TLS_INSECURE']
 
-    client = MongoClient(app.config['MONGO_URI'], **mongo_options)
-    # Connect to the database (use 'Cluster0' since that's where the repositories are)
-    db_name = 'Cluster0'
-    mongo = client[db_name]
+    mongo = MongoClient(app.config['MONGO_URI'], **mongo_options)
+    db_name = app.config['MONGO_URI'].split('/')[-1]
+    mongo = mongo[db_name]
     
     # Ensure indexes exist for better query performance
     # This is especially important for sorting operations
     try:
         # Create index on created_at field for proper chronological ordering
-        mongo.repositories.create_index([("created_at", -1)])  # -1 for descending order
+        mongo.db.repositories.create_index([("created_at", -1)])  # -1 for descending order
     except Exception as e:
         app.logger.warning(f"Error creating indexes: {e}")
     
@@ -90,15 +89,5 @@ def create_app(config_name='default'):
     @app.errorhandler(500)
     def handle_500(error):
         return jsonify({'error': 'Internal Server Error', 'message': str(error)}), 500
-    
-    # Initialize auto-save service if enabled
-    try:
-        with app.app_context():
-            from app.services.auto_save_service import AutoSaveService
-            settings = mongo.settings.find_one({})
-            if settings and settings.get('autoSave', {}).get('repositories', False):
-                AutoSaveService.start()
-    except Exception as e:
-        app.logger.error(f"Error initializing auto-save service: {e}")
     
     return app

@@ -1,280 +1,269 @@
+import os
 import threading
 import time
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from bson import ObjectId
-import os
-
 from app import mongo
+from bson import ObjectId
 from app.services.repository_service import RepositoryService
 
 class AutoSaveService:
-    _instance = None
+    """Service for automatically saving repository data to MongoDB."""
+    
+    # Class variables for thread management
+    _auto_save_thread = None
     _running = False
-    _thread = None
-    _last_run_time = None
-    _next_run_time = None
-    _repositories_saved = 0
-    _analyses_saved = 0
-    _enhanced_analyses_saved = 0
-
-    @classmethod
-    def get_instance(cls):
-        """Get singleton instance of AutoSaveService"""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+    _interval = 60 * 60  # Default: 1 hour in seconds
     
     @classmethod
-    def start(cls):
-        """Start the auto-save service"""
-        instance = cls.get_instance()
-        if not cls._running:
-            cls._running = True
-            cls._thread = threading.Thread(target=instance._run_service, daemon=True)
-            cls._thread.start()
-            return True
-        return False
-    
-    @classmethod
-    def stop(cls):
-        """Stop the auto-save service"""
+    def start_auto_save(cls, interval: int = None) -> Dict:
+        """Start the auto-save background thread.
+        
+        Args:
+            interval: Time between saves in seconds. Defaults to 1 hour.
+        
+        Returns:
+            Dict: Status message
+        """
         if cls._running:
-            cls._running = False
-            cls._thread = None
-            return True
-        return False
+            return {"status": "already_running", "message": "Auto-save is already running"}
+        
+        # Update interval if provided
+        if interval is not None:
+            cls._interval = max(300, min(86400, interval))  # Limit between 5 min and 24 hours
+        
+        # Start thread
+        cls._running = True
+        cls._auto_save_thread = threading.Thread(target=cls._auto_save_worker, daemon=True)
+        cls._auto_save_thread.start()
+        
+        # Update settings to reflect auto-save is enabled
+        cls._update_settings(True, cls._interval)
+        
+        return {
+            "status": "started", 
+            "message": f"Auto-save started with {cls._interval} seconds interval", 
+            "interval": cls._interval
+        }
     
     @classmethod
-    def is_running(cls):
-        """Check if the auto-save service is running"""
-        return cls._running
+    def stop_auto_save(cls) -> Dict:
+        """Stop the auto-save background thread.
+        
+        Returns:
+            Dict: Status message
+        """
+        if not cls._running:
+            return {"status": "not_running", "message": "Auto-save is not running"}
+        
+        cls._running = False
+        # Thread will terminate on next cycle due to _running flag
+        
+        # Update settings to reflect auto-save is disabled
+        cls._update_settings(False, cls._interval)
+        
+        return {"status": "stopped", "message": "Auto-save stopped"}
     
     @classmethod
-    def get_status(cls):
-        """Get the status of the auto-save service"""
+    def get_status(cls) -> Dict:
+        """Get the current status of auto-save.
+        
+        Returns:
+            Dict: Status information
+        """
+        settings = mongo.settings.find_one({}, {"_id": 0}) or {}
+        auto_save_config = settings.get("auto_save", {})
+        
         return {
             "running": cls._running,
-            "last_run_time": cls._last_run_time,
-            "next_run_time": cls._next_run_time,
-            "repositories_saved": cls._repositories_saved,
-            "analyses_saved": cls._analyses_saved,
-            "enhanced_analyses_saved": cls._enhanced_analyses_saved
+            "interval": cls._interval,
+            "enabled": auto_save_config.get("enabled", False),
+            "last_run": auto_save_config.get("last_run", None),
+            "next_run": None if not cls._running else (
+                (datetime.fromisoformat(auto_save_config.get("last_run", datetime.utcnow().isoformat())) + 
+                timedelta(seconds=cls._interval)).isoformat()
+            )
         }
     
     @classmethod
-    def run_now(cls):
-        """Run the auto-save service immediately"""
-        instance = cls.get_instance()
-        result = instance._perform_auto_save()
-        return {
-            "running": cls._running,
-            "repositories_saved": result["repositories_saved"],
-            "analyses_saved": result["analyses_saved"],
-            "enhanced_analyses_saved": result["enhanced_analyses_saved"],
-            "last_run_time": cls._last_run_time
-        }
+    def _update_settings(cls, enabled: bool, interval: int) -> None:
+        """Update auto-save settings in the database.
+        
+        Args:
+            enabled: Whether auto-save is enabled
+            interval: Time between saves in seconds
+        """
+        last_run = datetime.utcnow().isoformat()
+        
+        mongo.settings.update_one(
+            {}, 
+            {"$set": {
+                "auto_save": {
+                    "enabled": enabled,
+                    "interval": interval,
+                    "last_run": last_run
+                }
+            }},
+            upsert=True
+        )
     
-    def _run_service(self):
-        """Run the auto-save service in a background thread"""
-        while self._running:
-            # Get settings to determine auto-save interval
-            settings = mongo.settings.find_one({})
-            
-            # Default to 30 minutes if settings not found
-            interval_minutes = 30
-            if settings and 'autoSave' in settings and 'interval' in settings['autoSave']:
-                interval_minutes = int(settings['autoSave']['interval'])
-            
-            # Update next run time
-            self.__class__._next_run_time = (datetime.utcnow() + timedelta(minutes=interval_minutes)).isoformat() + 'Z'
-            
-            # Perform auto-save operations
-            self._perform_auto_save()
-            
-            # Sleep for the interval
-            sleep_seconds = interval_minutes * 60
-            for _ in range(sleep_seconds):
-                if not self._running:
-                    break
-                time.sleep(1)  # Check every second if we should stop
-    
-    def _perform_auto_save(self):
-        """Perform auto-save operations"""
-        # Get settings to determine which auto-save operations to perform
-        settings = mongo.settings.find_one({})
+    @classmethod
+    def _auto_save_worker(cls) -> None:
+        """Background worker that runs the auto-save process periodically."""
+        print("Auto-save thread started")
         
-        save_repositories = True
-        save_analysis = False
-        save_enhanced_analysis = False
-        
-        if settings and 'autoSave' in settings:
-            save_repositories = settings['autoSave'].get('repositories', True)
-            save_analysis = settings['autoSave'].get('analysis', False)
-            save_enhanced_analysis = settings['autoSave'].get('enhancedAnalysis', False)
-        
-        # Track saved counts
-        repos_saved = 0
-        analysis_saved = 0
-        enhanced_saved = 0
-        
-        # Auto-save repositories
-        if save_repositories:
-            repos_saved = self._save_repositories()
-        
-        # Auto-save analysis
-        if save_analysis:
-            analysis_saved = self._save_analyses()
-        
-        # Auto-save enhanced analysis
-        if save_enhanced_analysis:
-            enhanced_saved = self._save_enhanced_analyses()
-        
-        # Update statistics
-        self.__class__._last_run_time = datetime.utcnow().isoformat() + 'Z'
-        self.__class__._repositories_saved = repos_saved
-        self.__class__._analyses_saved = analysis_saved
-        self.__class__._enhanced_analyses_saved = enhanced_saved
-        
-        return {
-            "repositories_saved": repos_saved,
-            "analyses_saved": analysis_saved,
-            "enhanced_analyses_saved": enhanced_saved
-        }
-    
-    def _save_repositories(self):
-        """Save all repositories to MongoDB"""
-        try:
-            # Get all completed repositories
-            repositories = RepositoryService.get_all_repositories({"status": "completed"})
-            
-            # Count of repos saved
-            count = 0
-            
-            # Update each repository
-            for repo in repositories:
-                repo_id = repo.get('_id')
-                repo_path = repo.get('repo_path')
+        while cls._running:
+            try:
+                cls.run_auto_save()
                 
-                # Skip if repo path doesn't exist
-                if not repo_path or not os.path.exists(repo_path):
-                    continue
+                # Sleep for the configured interval
+                # We check _running periodically to allow for quicker shutdown
+                for _ in range(cls._interval // 10):
+                    if not cls._running:
+                        break
+                    time.sleep(10)
                 
-                # Get latest stats
-                try:
-                    stats = RepositoryService._get_repository_stats(repo_path)
+                # For any remaining time less than 10 seconds
+                remaining = cls._interval % 10
+                if remaining > 0 and cls._running:
+                    time.sleep(remaining)
                     
-                    # Update repository
-                    mongo.repositories.update_one(
-                        {'_id': ObjectId(repo_id)},
-                        {'$set': {
-                            'file_count': stats['file_count'],
-                            'directory_count': stats['directory_count'],
-                            'total_size': stats['total_size'],
-                            'languages': stats['languages'],
-                            'updated_at': datetime.utcnow().isoformat() + 'Z',
-                            'last_auto_save': datetime.utcnow().isoformat() + 'Z'
-                        }}
-                    )
-                    count += 1
+            except Exception as e:
+                print(f"Error in auto-save thread: {e}")
+                # Sleep for 5 minutes before retrying after error
+                time.sleep(300)
+    
+    @classmethod
+    def run_auto_save(cls) -> Dict:
+        """Run a single auto-save operation.
+        
+        This saves all repository data to MongoDB.
+        
+        Returns:
+            Dict: Result of the operation
+        """
+        print("Running auto-save operation...")
+        start_time = time.time()
+        saved_count = 0
+        error_count = 0
+        
+        try:
+            # Get all repositories that are in 'completed' status
+            repos = list(mongo.db.repositories.find({"status": "completed"}))
+            total = len(repos)
+            
+            for repo in repos:
+                repo_id = str(repo.get("_id"))
+                try:
+                    # Save repository data
+                    saved = cls._save_repository_data(repo_id)
+                    if saved:
+                        saved_count += 1
                 except Exception as e:
                     print(f"Error saving repository {repo_id}: {e}")
+                    error_count += 1
             
-            return count
+            # Update last run time
+            last_run = datetime.utcnow().isoformat()
+            mongo.settings.update_one(
+                {}, 
+                {"$set": {"auto_save.last_run": last_run}},
+                upsert=True
+            )
+            
+            elapsed = time.time() - start_time
+            return {
+                "status": "completed",
+                "message": f"Auto-save completed in {elapsed:.2f} seconds",
+                "total": total,
+                "saved": saved_count,
+                "errors": error_count,
+                "last_run": last_run
+            }
+            
         except Exception as e:
-            print(f"Error in _save_repositories: {e}")
-            return 0
+            elapsed = time.time() - start_time
+            return {
+                "status": "error",
+                "message": f"Auto-save failed after {elapsed:.2f} seconds: {str(e)}",
+                "error": str(e)
+            }
     
-    def _save_analyses(self):
-        """Save all repository analyses to MongoDB"""
-        try:
-            # Get all completed repositories
-            repositories = RepositoryService.get_all_repositories({"status": "completed"})
+    @classmethod
+    def _save_repository_data(cls, repo_id: str) -> bool:
+        """Save a repository's data to MongoDB.
+        
+        Args:
+            repo_id: The repository ID to save
             
-            # Count of analyses saved
-            count = 0
-            
-            # Update each repository analysis
-            for repo in repositories:
-                repo_id = repo.get('_id')
-                
-                # Skip if repo doesn't exist
-                if not repo_id:
-                    continue
-                
-                try:
-                    # Perform analysis
-                    analysis = RepositoryService.analyze_repository_code(str(repo_id))
-                    
-                    # Skip if analysis failed
-                    if not analysis or 'error' in analysis:
-                        continue
-                    
-                    # Save analysis to MongoDB
-                    mongo.repository_analyses.update_one(
-                        {'repository_id': str(repo_id)},
-                        {'$set': {
-                            'repository_id': str(repo_id),
-                            'analysis': analysis,
-                            'updated_at': datetime.utcnow().isoformat() + 'Z',
-                            'last_auto_save': datetime.utcnow().isoformat() + 'Z'
-                        }},
-                        upsert=True
-                    )
-                    count += 1
-                except Exception as e:
-                    print(f"Error saving analysis for repository {repo_id}: {e}")
-            
-            return count
-        except Exception as e:
-            print(f"Error in _save_analyses: {e}")
-            return 0
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Get repository
+        repo = RepositoryService.get_repository(repo_id)
+        if not repo:
+            return False
+        
+        # Create or update MongoDB backup collection
+        backup_data = {
+            "repository_id": ObjectId(repo_id),
+            "repo_url": repo.get("repo_url"),
+            "repo_name": repo.get("repo_name"),
+            "file_count": repo.get("file_count"),
+            "directory_count": repo.get("directory_count"),
+            "total_size": repo.get("total_size"),
+            "languages": repo.get("languages", {}),
+            "backed_up_at": datetime.utcnow().isoformat()
+        }
+        
+        # If repository has a file structure, include it
+        repo_path = repo.get("repo_path")
+        if repo_path and os.path.exists(repo_path):
+            try:
+                # Get repository structure
+                structure = RepositoryService.analyze_repository_code(repo_id)
+                if structure and not isinstance(structure, dict) or not structure.get("error"):
+                    backup_data["structure"] = structure
+            except Exception as e:
+                print(f"Error getting repository structure for {repo_id}: {e}")
+        
+        # Use upsert to create or update record
+        mongo.db.repository_backups.update_one(
+            {"repository_id": ObjectId(repo_id)},
+            {"$set": backup_data},
+            upsert=True
+        )
+        
+        return True
     
-    def _save_enhanced_analyses(self):
-        """Save all enhanced repository analyses to MongoDB"""
+    @classmethod
+    def save_repository(cls, repo_id: str) -> Dict:
+        """Manually save a specific repository's data to MongoDB.
+        
+        Args:
+            repo_id: The repository ID to save
+            
+        Returns:
+            Dict: Result of the operation
+        """
         try:
-            # Get all completed repositories
-            repositories = RepositoryService.get_all_repositories({"status": "completed"})
+            success = cls._save_repository_data(repo_id)
             
-            # Count of enhanced analyses saved
-            count = 0
-            
-            # Import enhanced repository service only when needed 
-            # to avoid circular imports
-            from app.services.enhanced_repository_service import EnhancedRepositoryService
-            
-            # Update each repository enhanced analysis
-            for repo in repositories:
-                repo_id = repo.get('_id')
+            if success:
+                return {
+                    "status": "success",
+                    "message": f"Repository {repo_id} saved successfully"
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Repository {repo_id} not found or could not be saved"
+                }
                 
-                # Skip if repo doesn't exist
-                if not repo_id:
-                    continue
-                
-                try:
-                    # Perform enhanced analysis
-                    enhanced_analysis = EnhancedRepositoryService.analyze_repository_code(str(repo_id))
-                    
-                    # Skip if analysis failed
-                    if not enhanced_analysis or 'error' in enhanced_analysis:
-                        continue
-                    
-                    # Save enhanced analysis to MongoDB
-                    mongo.enhanced_repository_analyses.update_one(
-                        {'repository_id': str(repo_id)},
-                        {'$set': {
-                            'repository_id': str(repo_id),
-                            'enhanced_analysis': enhanced_analysis,
-                            'updated_at': datetime.utcnow().isoformat() + 'Z',
-                            'last_auto_save': datetime.utcnow().isoformat() + 'Z'
-                        }},
-                        upsert=True
-                    )
-                    count += 1
-                except Exception as e:
-                    print(f"Error saving enhanced analysis for repository {repo_id}: {e}")
-            
-            return count
         except Exception as e:
-            print(f"Error in _save_enhanced_analyses: {e}")
-            return 0 
+            return {
+                "status": "error",
+                "message": f"Error saving repository {repo_id}: {str(e)}",
+                "error": str(e)
+            } 
