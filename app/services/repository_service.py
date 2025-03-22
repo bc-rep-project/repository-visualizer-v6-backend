@@ -55,7 +55,8 @@ class RepositoryService:
                     {'repo_name': {'$regex': search_term, '$options': 'i'}}
                 ]
         
-        repositories = list(mongo.repositories.find(query))
+        # Always sort by created_at in descending order to ensure newest repositories are at the top
+        repositories = list(mongo.repositories.find(query).sort('created_at', -1))
         
         # Convert ObjectId to string
         for repo in repositories:
@@ -645,8 +646,8 @@ class RepositoryService:
             # Print debug information
             print(f"DEBUG: Base MongoDB query: {query}")
             
-            # Execute base query and get all repositories
-            # We'll manually filter for language and handle pagination afterwards
+            # Always sort by created_at in descending order to ensure newest repositories are at the top
+            # This ensures chronological order with newest first, regardless of the sort_by parameter
             all_repos = list(mongo.repositories.find(query).sort('created_at', -1))
             
             # Apply language filter manually if needed
