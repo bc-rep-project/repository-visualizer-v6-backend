@@ -49,7 +49,10 @@ def get_github_data(repo_id):
         
         # Get GitHub token from environment variable
         github_token = os.environ.get('GITHUB_TOKEN', '')
-        headers = {}
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Repository-Visualizer'
+        }
         if github_token:
             headers['Authorization'] = f'token {github_token}'
         
@@ -60,7 +63,30 @@ def get_github_data(repo_id):
         )
         
         if repo_response.status_code != 200:
-            return jsonify({'error': f'GitHub API error: {repo_response.status_code}', 'details': repo_response.text}), 400
+            error_message = 'GitHub API error'
+            error_details = repo_response.text
+            
+            # Handle specific error cases
+            if repo_response.status_code == 403:
+                # Check if rate limit exceeded
+                rate_limit = repo_response.headers.get('X-RateLimit-Remaining')
+                if rate_limit == '0':
+                    reset_time = repo_response.headers.get('X-RateLimit-Reset')
+                    reset_time_str = datetime.fromtimestamp(int(reset_time)).strftime('%H:%M:%S') if reset_time else 'unknown'
+                    error_message = 'GitHub API rate limit exceeded'
+                    error_details = f'Rate limit will reset at {reset_time_str}'
+                else:
+                    error_message = 'GitHub API access forbidden'
+                    error_details = 'The repository may be private or the API token may be invalid'
+            elif repo_response.status_code == 404:
+                error_message = 'GitHub repository not found'
+                error_details = 'The repository may have been deleted or made private'
+            
+            return jsonify({
+                'error': error_message,
+                'details': error_details,
+                'status_code': repo_response.status_code
+            }), 400
         
         repo_data = repo_response.json()
         
@@ -159,7 +185,10 @@ def get_github_commits(repo_id):
         
         # Get GitHub token from environment variable
         github_token = os.environ.get('GITHUB_TOKEN', '')
-        headers = {}
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Repository-Visualizer'
+        }
         if github_token:
             headers['Authorization'] = f'token {github_token}'
         
@@ -170,7 +199,30 @@ def get_github_commits(repo_id):
         )
         
         if commits_response.status_code != 200:
-            return jsonify({'error': f'GitHub API error: {commits_response.status_code}', 'details': commits_response.text}), 400
+            error_message = 'GitHub API error'
+            error_details = commits_response.text
+            
+            # Handle specific error cases
+            if commits_response.status_code == 403:
+                # Check if rate limit exceeded
+                rate_limit = commits_response.headers.get('X-RateLimit-Remaining')
+                if rate_limit == '0':
+                    reset_time = commits_response.headers.get('X-RateLimit-Reset')
+                    reset_time_str = datetime.fromtimestamp(int(reset_time)).strftime('%H:%M:%S') if reset_time else 'unknown'
+                    error_message = 'GitHub API rate limit exceeded'
+                    error_details = f'Rate limit will reset at {reset_time_str}'
+                else:
+                    error_message = 'GitHub API access forbidden'
+                    error_details = 'The repository may be private or the API token may be invalid'
+            elif commits_response.status_code == 404:
+                error_message = 'GitHub repository not found'
+                error_details = 'The repository may have been deleted or made private'
+            
+            return jsonify({
+                'error': error_message,
+                'details': error_details,
+                'status_code': commits_response.status_code
+            }), 400
         
         commits = commits_response.json()
         
