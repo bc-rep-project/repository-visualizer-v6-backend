@@ -119,6 +119,189 @@ def get_github_data(repo_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@repo_details_bp.route('/<repo_id>/github/commits', methods=['GET'])
+@limiter.limit("50/minute")
+def get_github_commits(repo_id):
+    """Get GitHub commits for a repository."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Check if repo_url is a GitHub URL
+    repo_url = repository.get('repo_url', '')
+    if 'github.com' not in repo_url:
+        return jsonify({'error': 'Not a GitHub repository', 'url': repo_url}), 400
+    
+    # Extract owner and repo name
+    try:
+        # Handle both HTTPS and SSH URLs
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format
+            parts = repo_url.replace('git@github.com:', '').split('/')
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo_name = parts[1].replace('.git', '')
+        else:
+            # HTTPS format
+            parts = repo_url.strip('/').split('/')
+            if len(parts) >= 4 and parts[-3] == 'github.com':
+                owner = parts[-2]
+                repo_name = parts[-1].replace('.git', '')
+        
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+        
+        # Get GitHub token from environment variable
+        github_token = os.environ.get('GITHUB_TOKEN', '')
+        headers = {}
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+        
+        # Fetch commits directly from GitHub API
+        commits_response = requests.get(
+            f'https://api.github.com/repos/{owner}/{repo_name}/commits?per_page=10',
+            headers=headers
+        )
+        
+        if commits_response.status_code != 200:
+            return jsonify({'error': f'GitHub API error: {commits_response.status_code}', 'details': commits_response.text}), 400
+        
+        commits = commits_response.json()
+        
+        return jsonify(commits), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@repo_details_bp.route('/<repo_id>/github/issues', methods=['GET'])
+@limiter.limit("50/minute")
+def get_github_issues(repo_id):
+    """Get GitHub issues for a repository."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Check if repo_url is a GitHub URL
+    repo_url = repository.get('repo_url', '')
+    if 'github.com' not in repo_url:
+        return jsonify({'error': 'Not a GitHub repository', 'url': repo_url}), 400
+    
+    # Extract owner and repo name
+    try:
+        # Handle both HTTPS and SSH URLs
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format
+            parts = repo_url.replace('git@github.com:', '').split('/')
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo_name = parts[1].replace('.git', '')
+        else:
+            # HTTPS format
+            parts = repo_url.strip('/').split('/')
+            if len(parts) >= 4 and parts[-3] == 'github.com':
+                owner = parts[-2]
+                repo_name = parts[-1].replace('.git', '')
+        
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+        
+        # Get GitHub token from environment variable
+        github_token = os.environ.get('GITHUB_TOKEN', '')
+        headers = {}
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+        
+        # Fetch issues directly from GitHub API
+        issues_response = requests.get(
+            f'https://api.github.com/repos/{owner}/{repo_name}/issues?state=all&per_page=10',
+            headers=headers
+        )
+        
+        if issues_response.status_code != 200:
+            return jsonify({'error': f'GitHub API error: {issues_response.status_code}', 'details': issues_response.text}), 400
+        
+        issues = issues_response.json()
+        
+        # Filter out pull requests (GitHub API includes PRs in issues endpoint)
+        issues = [issue for issue in issues if 'pull_request' not in issue]
+        
+        return jsonify(issues), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@repo_details_bp.route('/<repo_id>/github/pulls', methods=['GET'])
+@limiter.limit("50/minute")
+def get_github_pulls(repo_id):
+    """Get GitHub pull requests for a repository."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Check if repo_url is a GitHub URL
+    repo_url = repository.get('repo_url', '')
+    if 'github.com' not in repo_url:
+        return jsonify({'error': 'Not a GitHub repository', 'url': repo_url}), 400
+    
+    # Extract owner and repo name
+    try:
+        # Handle both HTTPS and SSH URLs
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format
+            parts = repo_url.replace('git@github.com:', '').split('/')
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo_name = parts[1].replace('.git', '')
+        else:
+            # HTTPS format
+            parts = repo_url.strip('/').split('/')
+            if len(parts) >= 4 and parts[-3] == 'github.com':
+                owner = parts[-2]
+                repo_name = parts[-1].replace('.git', '')
+        
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+        
+        # Get GitHub token from environment variable
+        github_token = os.environ.get('GITHUB_TOKEN', '')
+        headers = {}
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+        
+        # Fetch pull requests directly from GitHub API
+        pulls_response = requests.get(
+            f'https://api.github.com/repos/{owner}/{repo_name}/pulls?state=all&per_page=10',
+            headers=headers
+        )
+        
+        if pulls_response.status_code != 200:
+            return jsonify({'error': f'GitHub API error: {pulls_response.status_code}', 'details': pulls_response.text}), 400
+        
+        pulls = pulls_response.json()
+        
+        return jsonify(pulls), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @repo_details_bp.route('/<repo_id>/commits', methods=['GET'])
 @limiter.limit("50/minute")
 def get_repository_commits(repo_id):
@@ -249,4 +432,64 @@ def get_repository_pulls(repo_id):
             'branch': f'feature/new-feature-{i}'
         })
     
-    return jsonify(pulls), 200 
+    return jsonify(pulls), 200
+
+@repo_details_bp.route('/<repo_id>/github/languages', methods=['GET'])
+@limiter.limit("50/minute")
+def get_github_languages(repo_id):
+    """Get GitHub languages for a repository."""
+    if not repo_id or repo_id == 'null' or repo_id == 'undefined' or repo_id == 'None':
+        return jsonify({'error': f'Invalid repository ID: {repo_id}'}), 400
+        
+    repository = RepositoryService.get_repository(repo_id)
+    if not repository:
+        return jsonify({'error': 'Repository not found'}), 404
+    
+    # Check if repo_url is a GitHub URL
+    repo_url = repository.get('repo_url', '')
+    if 'github.com' not in repo_url:
+        return jsonify({'error': 'Not a GitHub repository', 'url': repo_url}), 400
+    
+    # Extract owner and repo name
+    try:
+        # Handle both HTTPS and SSH URLs
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format
+            parts = repo_url.replace('git@github.com:', '').split('/')
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo_name = parts[1].replace('.git', '')
+        else:
+            # HTTPS format
+            parts = repo_url.strip('/').split('/')
+            if len(parts) >= 4 and parts[-3] == 'github.com':
+                owner = parts[-2]
+                repo_name = parts[-1].replace('.git', '')
+        
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+        
+        # Get GitHub token from environment variable
+        github_token = os.environ.get('GITHUB_TOKEN', '')
+        headers = {}
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+        
+        # Fetch languages directly from GitHub API
+        languages_response = requests.get(
+            f'https://api.github.com/repos/{owner}/{repo_name}/languages',
+            headers=headers
+        )
+        
+        if languages_response.status_code != 200:
+            return jsonify({'error': f'GitHub API error: {languages_response.status_code}', 'details': languages_response.text}), 400
+        
+        languages = languages_response.json()
+        
+        return jsonify(languages), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500 
