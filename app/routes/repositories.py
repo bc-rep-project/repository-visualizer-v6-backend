@@ -289,3 +289,144 @@ def update_repository_dates():
         })
     except Exception as e:
         return jsonify({'error': str(e), 'success': False}), 500
+
+@repo_bp.route('/api/repositories/<repo_id>/github', methods=['GET'])
+@limiter.limit("30/minute")
+def get_github_data(repo_id):
+    """Proxy GitHub API requests for a repository."""
+    try:
+        import requests
+        import json
+        from bson.objectid import ObjectId
+        
+        # Get repository details to extract GitHub URL
+        repository = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+        
+        if not repository:
+            return jsonify({'error': 'Repository not found'}), 404
+            
+        repo_url = repository.get('repo_url')
+        if not repo_url or 'github.com' not in repo_url:
+            return jsonify({'error': 'Not a GitHub repository'}), 400
+            
+        # Parse GitHub URL to extract owner and repo name
+        # Handle both SSH and HTTPS formats
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format: git@github.com:owner/repo.git
+            parts = repo_url.replace('git@github.com:', '').replace('.git', '').split('/')
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+        else:
+            # HTTPS format: https://github.com/owner/repo.git
+            parts = repo_url.replace('https://github.com/', '').replace('.git', '').split('/')
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+                
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+            
+        # GitHub API base URL
+        github_api_url = f'https://api.github.com/repos/{owner}/{repo_name}'
+        
+        # Make request to GitHub API
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        
+        # Add GitHub token if available
+        github_token = None
+        try:
+            from app.config import Config
+            github_token = Config.GITHUB_TOKEN
+        except (ImportError, AttributeError):
+            pass
+            
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+            
+        # Get additional path parameters
+        path = request.args.get('path', '')
+        if path:
+            github_api_url = f'{github_api_url}/{path}'
+            
+        # Make the request
+        response = requests.get(github_api_url, headers=headers)
+        
+        # Check for rate limiting
+        if response.status_code == 403 and 'rate limit' in response.text.lower():
+            return jsonify({
+                'error': 'GitHub API rate limit exceeded',
+                'rate_limit': response.headers.get('X-RateLimit-Limit'),
+                'rate_remaining': response.headers.get('X-RateLimit-Remaining'),
+                'rate_reset': response.headers.get('X-RateLimit-Reset')
+            }), 403
+            
+        # Return GitHub API response
+        return jsonify(response.json()), response.status_code
+            
+    except Exception as e:
+        return jsonify({'error': f'GitHub API request failed: {str(e)}'}), 500
+        
+@repo_bp.route('/api/repositories/<repo_id>/github/languages', methods=['GET'])
+@limiter.limit("30/minute")
+def get_github_languages(repo_id):
+    """Get language statistics for a GitHub repository."""
+    try:
+        import requests
+        from bson.objectid import ObjectId
+        
+        # Get repository details to extract GitHub URL
+        repository = mongo.db.repositories.find_one({'_id': ObjectId(repo_id)})
+        
+        if not repository:
+            return jsonify({'error': 'Repository not found'}), 404
+            
+        repo_url = repository.get('repo_url')
+        if not repo_url or 'github.com' not in repo_url:
+            return jsonify({'error': 'Not a GitHub repository'}), 400
+            
+        # Parse GitHub URL to extract owner and repo name
+        # Handle both SSH and HTTPS formats
+        owner = None
+        repo_name = None
+        
+        if repo_url.startswith('git@github.com:'):
+            # SSH format: git@github.com:owner/repo.git
+            parts = repo_url.replace('git@github.com:', '').replace('.git', '').split('/')
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+        else:
+            # HTTPS format: https://github.com/owner/repo.git
+            parts = repo_url.replace('https://github.com/', '').replace('.git', '').split('/')
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+                
+        if not owner or not repo_name:
+            return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
+            
+        # GitHub API URL for languages
+        github_api_url = f'https://api.github.com/repos/{owner}/{repo_name}/languages'
+        
+        # Make request to GitHub API
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        
+        # Add GitHub token if available
+        github_token = None
+        try:
+            from app.config import Config
+            github_token = Config.GITHUB_TOKEN
+        except (ImportError, AttributeError):
+            pass
+            
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+            
+        # Make the request
+        response = requests.get(github_api_url, headers=headers)
+        
+        # Return GitHub API response
+        return jsonify(response.json()), response.status_code
+            
+    except Exception as e:
+        return jsonify({'error': f'GitHub API request failed: {str(e)}'}), 500
