@@ -12,6 +12,9 @@ class Config:
     RATELIMIT_STORAGE_OPTIONS = {}
     REPO_STORAGE_DIR = os.environ.get('REPO_STORAGE_DIR', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'repos'))
     
+    # GitHub API configuration
+    GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+    
     # Repository settings
     REPO_DIR = os.path.join(os.getcwd(), 'repos')
     
