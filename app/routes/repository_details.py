@@ -578,7 +578,7 @@ def get_repository_pulls(repo_id):
             'branch': f'feature/new-feature-{i}'
         })
     
-    return jsonify(pulls), 200
+    return jsonify(pulls), 200 
 
 @repo_details_bp.route('/<repo_id>/github/languages', methods=['GET'])
 @limiter.limit("50/minute")
