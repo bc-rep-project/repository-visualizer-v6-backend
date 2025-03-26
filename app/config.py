@@ -13,7 +13,7 @@ class Config:
     REPO_STORAGE_DIR = os.environ.get('REPO_STORAGE_DIR', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'repos'))
     
     # GitHub API configuration
-    GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+    GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', 'invalid_token_for_testing_rate_limits')
     
     # Repository settings
     REPO_DIR = os.path.join(os.getcwd(), 'repos')

@@ -6,6 +6,7 @@ from bson import ObjectId
 import random
 import os
 import requests
+from app.config import Config
 
 repo_details_bp = Blueprint('repository_details', __name__, url_prefix='/api/repositories')
 
@@ -618,9 +619,16 @@ def get_github_languages(repo_id):
         if not owner or not repo_name:
             return jsonify({'error': 'Could not parse GitHub repository URL'}), 400
         
-        # Get GitHub token from environment variable
-        github_token = os.environ.get('GITHUB_TOKEN', '')
-        headers = {}
+        # Get GitHub token from environment variable - for testing, use invalid token
+        github_token = Config.GITHUB_TOKEN
+
+        # Add debug logging
+        print(f"Using GitHub token for languages request: {github_token[:4]}...{github_token[-4:] if len(github_token) > 8 else ''}")
+        
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Repository-Visualizer'
+        }
         if github_token:
             headers['Authorization'] = f'token {github_token}'
         
@@ -629,6 +637,12 @@ def get_github_languages(repo_id):
             f'https://api.github.com/repos/{owner}/{repo_name}/languages',
             headers=headers
         )
+        
+        # Add debug logging
+        print(f"GitHub languages API response: {languages_response.status_code}")
+        print(f"X-RateLimit-Limit: {languages_response.headers.get('X-RateLimit-Limit')}")
+        print(f"X-RateLimit-Remaining: {languages_response.headers.get('X-RateLimit-Remaining')}")
+        print(f"X-RateLimit-Reset: {languages_response.headers.get('X-RateLimit-Reset')}")
         
         if languages_response.status_code != 200:
             error_message = 'GitHub API error'
@@ -641,6 +655,8 @@ def get_github_languages(repo_id):
                 rate_limit = languages_response.headers.get('X-RateLimit-Limit')
                 rate_remaining = languages_response.headers.get('X-RateLimit-Remaining')
                 rate_reset = languages_response.headers.get('X-RateLimit-Reset')
+                
+                print(f"Rate limit debugging - Limit: {rate_limit}, Remaining: {rate_remaining}, Reset: {rate_reset}")
                 
                 if rate_remaining == '0':
                     reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
