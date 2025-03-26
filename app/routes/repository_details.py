@@ -69,15 +69,27 @@ def get_github_data(repo_id):
             # Handle specific error cases
             if repo_response.status_code == 403:
                 # Check if rate limit exceeded
-                rate_limit = repo_response.headers.get('X-RateLimit-Remaining')
-                if rate_limit == '0':
-                    reset_time = repo_response.headers.get('X-RateLimit-Reset')
-                    reset_time_str = datetime.fromtimestamp(int(reset_time)).strftime('%H:%M:%S') if reset_time else 'unknown'
+                rate_limit = repo_response.headers.get('X-RateLimit-Limit')
+                rate_remaining = repo_response.headers.get('X-RateLimit-Remaining')
+                rate_reset = repo_response.headers.get('X-RateLimit-Reset')
+                
+                if rate_remaining == '0':
+                    reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                    reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
                     error_message = 'GitHub API rate limit exceeded'
-                    error_details = f'Rate limit will reset at {reset_time_str}'
+                    error_details = f'Rate limit exceeded. Limit will reset at {reset_time_str}'
                 else:
                     error_message = 'GitHub API access forbidden'
                     error_details = 'The repository may be private or the API token may be invalid'
+                
+                # Include rate limit information in the response
+                return jsonify({
+                    'error': error_message,
+                    'details': error_details,
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
             elif repo_response.status_code == 404:
                 error_message = 'GitHub repository not found'
                 error_details = 'The repository may have been deleted or made private'
@@ -205,15 +217,27 @@ def get_github_commits(repo_id):
             # Handle specific error cases
             if commits_response.status_code == 403:
                 # Check if rate limit exceeded
-                rate_limit = commits_response.headers.get('X-RateLimit-Remaining')
-                if rate_limit == '0':
-                    reset_time = commits_response.headers.get('X-RateLimit-Reset')
-                    reset_time_str = datetime.fromtimestamp(int(reset_time)).strftime('%H:%M:%S') if reset_time else 'unknown'
+                rate_limit = commits_response.headers.get('X-RateLimit-Limit')
+                rate_remaining = commits_response.headers.get('X-RateLimit-Remaining')
+                rate_reset = commits_response.headers.get('X-RateLimit-Reset')
+                
+                if rate_remaining == '0':
+                    reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                    reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
                     error_message = 'GitHub API rate limit exceeded'
-                    error_details = f'Rate limit will reset at {reset_time_str}'
+                    error_details = f'Rate limit exceeded. Limit will reset at {reset_time_str}'
                 else:
                     error_message = 'GitHub API access forbidden'
                     error_details = 'The repository may be private or the API token may be invalid'
+                
+                # Include rate limit information in the response
+                return jsonify({
+                    'error': error_message,
+                    'details': error_details,
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
             elif commits_response.status_code == 404:
                 error_message = 'GitHub repository not found'
                 error_details = 'The repository may have been deleted or made private'
@@ -282,7 +306,42 @@ def get_github_issues(repo_id):
         )
         
         if issues_response.status_code != 200:
-            return jsonify({'error': f'GitHub API error: {issues_response.status_code}', 'details': issues_response.text}), 400
+            error_message = 'GitHub API error'
+            error_details = issues_response.text
+            
+            # Handle specific error cases
+            if issues_response.status_code == 403:
+                # Check if rate limit exceeded
+                rate_limit = issues_response.headers.get('X-RateLimit-Limit')
+                rate_remaining = issues_response.headers.get('X-RateLimit-Remaining')
+                rate_reset = issues_response.headers.get('X-RateLimit-Reset')
+                
+                if rate_remaining == '0':
+                    reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                    reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
+                    error_message = 'GitHub API rate limit exceeded'
+                    error_details = f'Rate limit exceeded. Limit will reset at {reset_time_str}'
+                else:
+                    error_message = 'GitHub API access forbidden'
+                    error_details = 'The repository may be private or the API token may be invalid'
+                
+                # Include rate limit information in the response
+                return jsonify({
+                    'error': error_message,
+                    'details': error_details,
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
+            elif issues_response.status_code == 404:
+                error_message = 'GitHub repository not found'
+                error_details = 'The repository may have been deleted or made private'
+            
+            return jsonify({
+                'error': error_message,
+                'details': error_details,
+                'status_code': issues_response.status_code
+            }), 400
         
         issues = issues_response.json()
         
@@ -345,7 +404,42 @@ def get_github_pulls(repo_id):
         )
         
         if pulls_response.status_code != 200:
-            return jsonify({'error': f'GitHub API error: {pulls_response.status_code}', 'details': pulls_response.text}), 400
+            error_message = 'GitHub API error'
+            error_details = pulls_response.text
+            
+            # Handle specific error cases
+            if pulls_response.status_code == 403:
+                # Check if rate limit exceeded
+                rate_limit = pulls_response.headers.get('X-RateLimit-Limit')
+                rate_remaining = pulls_response.headers.get('X-RateLimit-Remaining')
+                rate_reset = pulls_response.headers.get('X-RateLimit-Reset')
+                
+                if rate_remaining == '0':
+                    reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                    reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
+                    error_message = 'GitHub API rate limit exceeded'
+                    error_details = f'Rate limit exceeded. Limit will reset at {reset_time_str}'
+                else:
+                    error_message = 'GitHub API access forbidden'
+                    error_details = 'The repository may be private or the API token may be invalid'
+                
+                # Include rate limit information in the response
+                return jsonify({
+                    'error': error_message,
+                    'details': error_details,
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
+            elif pulls_response.status_code == 404:
+                error_message = 'GitHub repository not found'
+                error_details = 'The repository may have been deleted or made private'
+            
+            return jsonify({
+                'error': error_message,
+                'details': error_details,
+                'status_code': pulls_response.status_code
+            }), 400
         
         pulls = pulls_response.json()
         
@@ -537,7 +631,32 @@ def get_github_languages(repo_id):
         )
         
         if languages_response.status_code != 200:
-            return jsonify({'error': f'GitHub API error: {languages_response.status_code}', 'details': languages_response.text}), 400
+            error_message = 'GitHub API error'
+            error_details = languages_response.text
+            status_code = 400
+            
+            # Handle specific error cases
+            if languages_response.status_code == 403:
+                # Check if rate limit exceeded
+                rate_limit = languages_response.headers.get('X-RateLimit-Limit')
+                rate_remaining = languages_response.headers.get('X-RateLimit-Remaining')
+                rate_reset = languages_response.headers.get('X-RateLimit-Reset')
+                
+                if rate_remaining == '0':
+                    reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                    reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
+                    error_message = 'GitHub API rate limit exceeded'
+                    error_details = f'Rate limit will reset at {reset_time_str}'
+                    
+                    return jsonify({
+                        'error': error_message,
+                        'details': error_details,
+                        'rate_limit': rate_limit,
+                        'rate_remaining': rate_remaining,
+                        'rate_reset': rate_reset
+                    }), 403
+            
+            return jsonify({'error': error_message, 'details': error_details}), status_code
         
         languages = languages_response.json()
         

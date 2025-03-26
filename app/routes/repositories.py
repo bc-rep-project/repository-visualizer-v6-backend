@@ -353,15 +353,26 @@ def get_github_data(repo_id):
         # Make the request
         response = requests.get(github_api_url, headers=headers)
         
-        # Check for rate limiting
-        if response.status_code == 403 and 'rate limit' in response.text.lower():
-            return jsonify({
-                'error': 'GitHub API rate limit exceeded',
-                'rate_limit': response.headers.get('X-RateLimit-Limit'),
-                'rate_remaining': response.headers.get('X-RateLimit-Remaining'),
-                'rate_reset': response.headers.get('X-RateLimit-Reset')
-            }), 403
+        # Handle rate limiting
+        if response.status_code == 403:
+            # Check if rate limit exceeded
+            rate_limit = response.headers.get('X-RateLimit-Limit')
+            rate_remaining = response.headers.get('X-RateLimit-Remaining')
+            rate_reset = response.headers.get('X-RateLimit-Reset')
             
+            if rate_remaining == '0':
+                from datetime import datetime, timedelta
+                reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
+                
+                return jsonify({
+                    'error': 'GitHub API rate limit exceeded',
+                    'details': f'Rate limit exceeded. Limit will reset at {reset_time_str}',
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
+        
         # Return GitHub API response
         return jsonify(response.json()), response.status_code
             
@@ -424,6 +435,26 @@ def get_github_languages(repo_id):
             
         # Make the request
         response = requests.get(github_api_url, headers=headers)
+        
+        # Handle rate limiting
+        if response.status_code == 403:
+            # Check if rate limit exceeded
+            rate_limit = response.headers.get('X-RateLimit-Limit')
+            rate_remaining = response.headers.get('X-RateLimit-Remaining')
+            rate_reset = response.headers.get('X-RateLimit-Reset')
+            
+            if rate_remaining == '0':
+                from datetime import datetime, timedelta
+                reset_time = datetime.fromtimestamp(int(rate_reset)) if rate_reset else datetime.now() + timedelta(hours=1)
+                reset_time_str = reset_time.strftime('%H:%M:%S') if reset_time else 'unknown'
+                
+                return jsonify({
+                    'error': 'GitHub API rate limit exceeded',
+                    'details': f'Rate limit exceeded. Limit will reset at {reset_time_str}',
+                    'rate_limit': rate_limit,
+                    'rate_remaining': rate_remaining,
+                    'rate_reset': rate_reset
+                }), 403
         
         # Return GitHub API response
         return jsonify(response.json()), response.status_code
